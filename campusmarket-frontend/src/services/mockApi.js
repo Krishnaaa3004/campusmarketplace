@@ -91,7 +91,11 @@ export function deleteListing(id) {
 }
 
 export function uploadImages(id, files) {
-  return delay({ listing_id: Number(id), uploaded: files.length })
+  const urls = files.map((f) => URL.createObjectURL(f))
+  listings = listings.map((l) =>
+    l.id === Number(id) ? { ...l, images: [...(l.images || []), ...urls].slice(0, 3) } : l
+  )
+  return getListing(id)
 }
 
 export function listResources(f = {}) {

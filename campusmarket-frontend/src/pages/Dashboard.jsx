@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { listingsApi } from '../services/api.js'
 import { useApi } from '../hooks/useApi.js'
 import { useAuth } from '../hooks/useAuth.jsx'
@@ -16,6 +17,7 @@ const TABS = [
 export default function Dashboard() {
   const { user } = useAuth()
   const toast = useToast()
+  const navigate = useNavigate()
   const [tab, setTab] = useState(TABS[0])
 
   const { data, loading, refetch } = useApi(
@@ -26,7 +28,7 @@ export default function Dashboard() {
 
   async function changeStatus(id, status) {
     await listingsApi.setStatus(id, status)
-    toast(`Marked ${status}`)
+    toast(status === 'available' ? 'Listing is available again' : `Marked ${status}`)
     refetch()
   }
 
@@ -69,15 +71,24 @@ export default function Dashboard() {
 
       {!loading && items.map((l) => (
         <div key={l.id} className="mb-3 flex flex-wrap items-center gap-4 rounded-card border border-line bg-paper p-3.5">
-          <div className="flex h-[60px] w-[60px] flex-none items-center justify-center rounded-[10px] text-[26px]" style={{ background: l.art.bg }}>
-            {l.art.emoji}
+          <div className="flex h-[60px] w-[60px] flex-none items-center justify-center overflow-hidden rounded-[10px] text-[26px]" style={{ background: l.art.bg }}>
+            {l.images?.length > 0 ? (
+              <img src={l.images[0]} alt={l.title} className="h-full w-full object-cover" />
+            ) : (
+              l.art.emoji
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[14.5px] font-semibold">{l.title}</p>
             <p className="text-[13px] text-ink-soft">{formatPrice(l.price)} · {titleCase(l.status)}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="btn-ghost btn-sm" onClick={() => toast('Editing lands in the next pass')}>Edit</button>
+            <button className="btn-ghost btn-sm" onClick={() => navigate(`/sell/${l.id}/edit`)}>Edit</button>
+            {l.status !== 'available' && (
+              <button className="btn-ghost btn-sm" onClick={() => changeStatus(l.id, 'available')}>
+                {l.status === 'sold' ? 'Relist as Available' : 'Mark Available'}
+              </button>
+            )}
             {l.status === 'available' && (
               <button className="btn-ghost btn-sm" onClick={() => changeStatus(l.id, 'reserved')}>Mark Reserved</button>
             )}

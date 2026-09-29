@@ -1,8 +1,9 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import Footer from './components/Footer.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 import Landing from './pages/Landing.jsx'
 import Marketplace from './pages/Marketplace.jsx'
@@ -18,10 +19,12 @@ import Admin from './pages/Admin.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 export default function App() {
+  const location = useLocation()
   return (
     <div className="flex min-h-screen flex-col pb-[74px] md:pb-0">
       <Navbar />
       <main className="flex-1">
+        <ErrorBoundary resetKey={location.pathname}>
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/marketplace" element={<Marketplace />} />
@@ -35,6 +38,7 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/sell" element={<Sell />} />
+            <Route path="/sell/:id/edit" element={<Sell />} />
             <Route path="/dashboard" element={<Dashboard />} />
           </Route>
 
@@ -46,6 +50,7 @@ export default function App() {
           <Route path="/404" element={<NotFound />} />
           <Route path="*" element={<Navigate to="/404" replace />} />
         </Routes>
+        </ErrorBoundary>
       </main>
       <Footer />
       <BottomNav />

@@ -32,8 +32,12 @@ export default function Login() {
     setBusy(true)
     setError('')
     try {
-      await login(email, otp)
-      navigate(location.state?.from || '/marketplace', { replace: true })
+      const u = await login(email, otp)
+      if (u?.profile_completed === false) {
+        navigate('/onboarding', { replace: true })
+      } else {
+        navigate(location.state?.from || '/marketplace', { replace: true })
+      }
     } catch (err) {
       setError(err.message)
     } finally {

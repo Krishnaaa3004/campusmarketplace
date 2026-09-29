@@ -53,11 +53,15 @@ export default function Landing() {
                     to={`/listing/${l.id}`}
                     className={`absolute w-[200px] rounded-card border border-line bg-paper p-3.5 shadow-lift transition hover:z-20 hover:scale-[1.03] ${TILT[i]}`}
                   >
-                    <div className="mb-2.5 flex h-24 items-center justify-center rounded-[10px] text-[34px]" style={{ background: l.art.bg }}>
-                      {l.art.emoji}
+                    <div className="mb-2.5 flex h-24 items-center justify-center overflow-hidden rounded-[10px] text-[34px]" style={{ background: l.art.bg }}>
+                      {l.images?.length > 0 ? (
+                        <img src={l.images[0]} alt={l.title} className="h-full w-full object-cover" />
+                      ) : (
+                        l.art.emoji
+                      )}
                     </div>
                     <p className="text-[13.5px] font-semibold">{l.title}</p>
-                    <p className="mt-0.5 text-[12px] text-ink-faint">{l.condition} · {l.seller.campus}</p>
+                    <p className="mt-0.5 text-[12px] text-ink-faint">{[l.condition, l.seller?.campus].filter(Boolean).join(' · ')}</p>
                     <p className="mt-1.5 font-display text-[15px] font-bold">{formatPrice(l.price)}</p>
                     <span className="mt-1.5 inline-block"><VerifiedBadge /></span>
                   </Link>

@@ -6,6 +6,7 @@ import { SkeletonDetail } from '../components/SkeletonCard.jsx'
 import { TypeBadge, VerifiedBadge } from '../components/Badge.jsx'
 import ReportModal from '../components/ReportModal.jsx'
 import EmptyState from '../components/EmptyState.jsx'
+import ImageLightbox from '../components/ImageLightbox.jsx'
 import RecommendedForYou from '../components/RecommendedForYou.jsx'
 import { recordView } from '../lib/recommendations.js'
 import { formatPrice, contactLink, titleCase } from '../lib/format.js'
@@ -13,6 +14,8 @@ import { formatPrice, contactLink, titleCase } from '../lib/format.js'
 export default function ListingDetail() {
   const { id } = useParams()
   const [reporting, setReporting] = useState(false)
+  const [activeImage, setActiveImage] = useState(0)
+  const [viewerOpen, setViewerOpen] = useState(false)
   const { data: l, loading, error } = useApi(() => listingsApi.get(id), [id])
 
   useEffect(() => {
@@ -29,6 +32,7 @@ export default function ListingDetail() {
   }
 
   const links = contactLink(l)
+  const images = l.images && l.images.length > 0 ? l.images : []
 
   return (
     <div className="mx-auto max-w-[1180px] px-6 py-9">
@@ -36,15 +40,40 @@ export default function ListingDetail() {
 
       <div className="grid gap-12 md:grid-cols-[.9fr_1.1fr]">
         <div>
-          <div className="mb-3 flex h-[340px] items-center justify-center rounded-slab text-[90px]" style={{ background: l.art.bg }}>
-            {l.art.emoji}
-          </div>
+          {images.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setViewerOpen(true)}
+              aria-label="View full image"
+              className="group relative mb-3 flex h-[340px] w-full cursor-zoom-in items-center justify-center overflow-hidden rounded-slab"
+              style={{ background: l.art.bg }}
+            >
+              <img src={images[activeImage]} alt={l.title} className="h-full w-full object-cover" />
+              <span className="absolute bottom-3 right-3 rounded-pill bg-black/60 px-3 py-1.5 text-[12px] font-semibold text-white opacity-90 transition group-hover:opacity-100">
+                🔍 Click to enlarge
+              </span>
+            </button>
+          ) : (
+            <div className="mb-3 flex h-[340px] items-center justify-center overflow-hidden rounded-slab text-[90px]" style={{ background: l.art.bg }}>
+              {l.art.emoji}
+            </div>
+          )}
           <div className="flex gap-2.5">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="flex h-[60px] w-[60px] items-center justify-center rounded-[10px] border-[1.5px] border-line text-2xl" style={{ background: l.art.bg }}>
-                {l.art.emoji}
-              </div>
-            ))}
+            {images.length > 0
+              ? images.map((src, i) => (
+                  <button
+                    key={src}
+                    onClick={() => setActiveImage(i)}
+                    className={`h-[60px] w-[60px] overflow-hidden rounded-[10px] border-[1.5px] ${i === activeImage ? 'border-ink' : 'border-line'}`}
+                  >
+                    <img src={src} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))
+              : [0, 1, 2].map((i) => (
+                  <div key={i} className="flex h-[60px] w-[60px] items-center justify-center rounded-[10px] border-[1.5px] border-line text-2xl" style={{ background: l.art.bg }}>
+                    {l.art.emoji}
+                  </div>
+                ))}
           </div>
         </div>
 
@@ -66,11 +95,11 @@ export default function ListingDetail() {
 
           <div className="my-5 flex items-center gap-3.5 rounded-card border border-line bg-paper p-4">
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sun font-display font-bold">
-              {l.seller.name[0]}
+              {(l.seller.name || '?')[0].toUpperCase()}
             </span>
             <div>
-              <p className="text-[14.5px] font-semibold">{l.seller.name}</p>
-              <p className="text-[13px] text-ink-soft">{l.seller.campus}</p>
+              <p className="text-[14.5px] font-semibold">{l.seller.name || 'Campus student'}</p>
+              <p className="text-[13px] text-ink-soft">{l.seller.campus || ''}</p>
             </div>
             <span className="ml-auto"><VerifiedBadge /></span>
           </div>
@@ -89,6 +118,16 @@ export default function ListingDetail() {
           <p className="mt-4 text-[12.5px] text-ink-faint">Meet on campus · Inspect before paying · Cash / UPI</p>
         </div>
       </div>
+
+      {viewerOpen && images.length > 0 && (
+        <ImageLightbox
+          images={images}
+          index={activeImage}
+          onIndexChange={setActiveImage}
+          onClose={() => setViewerOpen(false)}
+          alt={l.title}
+        />
+      )}
 
       <ReportModal open={reporting} onClose={() => setReporting(false)} targetTitle={l.title} listingId={l.id} />
 

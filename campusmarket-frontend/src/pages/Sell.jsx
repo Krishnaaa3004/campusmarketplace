@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { listingsApi } from '../services/api.js'
 import { useToast } from '../hooks/useToast.jsx'
+import { useAuth } from '../hooks/useAuth.jsx'
 import { CATEGORIES, CONDITIONS, LISTING_TYPES } from '../data/sample.js'
 
 const BLANK = {
@@ -10,13 +11,52 @@ const BLANK = {
 }
 
 export default function Sell() {
+  const { id } = useParams()
+  const isEdit = Boolean(id)
+  const { user } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
   const [form, setForm] = useState(BLANK)
+  const [existingImages, setExistingImages] = useState([])
+  const [loadingListing, setLoadingListing] = useState(isEdit)
   const [files, setFiles] = useState([])
   const [previews, setPreviews] = useState([])
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
+
+  // Edit mode: load the listing and prefill the form.
+  useEffect(() => {
+    if (!isEdit) return
+    let cancelled = false
+    listingsApi
+      .get(id)
+      .then((l) => {
+        if (cancelled) return
+        if (user && String(l.seller?.id) !== String(user.id)) {
+          toast('You can only edit your own listings')
+          navigate('/dashboard', { replace: true })
+          return
+        }
+        setForm({
+          title: l.title || '',
+          category: l.category || CATEGORIES[0],
+          listing_type: l.listing_type || 'sale',
+          price: l.listing_type === 'free' ? '' : String(l.price ?? ''),
+          condition: l.condition || 'Good',
+          description: l.description || '',
+          pickup_spot: l.pickup_spot || '',
+        })
+        setExistingImages(l.images || [])
+        setLoadingListing(false)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        toast(err.message || 'Listing not found')
+        navigate('/dashboard', { replace: true })
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user?.id])
 
   useEffect(() => {
     const urls = files.map((f) => URL.createObjectURL(f))
@@ -41,12 +81,15 @@ export default function Sell() {
     if (!validate()) return
     setSaving(true)
     try {
-      const created = await listingsApi.create({
+      const payload = {
         ...form,
         price: form.listing_type === 'free' ? 0 : Number(form.price),
-      })
-      if (files.length) await listingsApi.uploadImages(created.id, files)
-      toast('Published')
+      }
+      const saved = isEdit
+        ? await listingsApi.update(id, { ...payload, images: existingImages })
+        : await listingsApi.create(payload)
+      if (files.length) await listingsApi.uploadImages(saved?.id ?? id, files)
+      toast(isEdit ? 'Changes saved' : 'Published')
       navigate('/dashboard')
     } catch (err) {
       toast(err.message)
@@ -55,11 +98,19 @@ export default function Sell() {
     }
   }
 
+  const photoSlots = Math.max(0, 3 - existingImages.length)
+
+  if (loadingListing) {
+    return <div className="mx-auto max-w-[1180px] px-6 py-9 text-ink-soft">Loading listing…</div>
+  }
+
   return (
     <div className="mx-auto max-w-[1180px] px-6 py-9">
-      <h1 className="text-[30px] font-bold">List something on CampusMarket</h1>
+      <h1 className="text-[30px] font-bold">{isEdit ? 'Edit your listing' : 'List something on CampusMarket'}</h1>
       <p className="mb-7 mt-2.5 text-ink-soft">
-        Turn your unused college stuff into cash — or pass it on to someone who needs it.
+        {isEdit
+          ? 'Update the details below and save your changes.'
+          : 'Turn your unused college stuff into cash — or pass it on to someone who needs it.'}
       </p>
 
       <div className="max-w-[640px] rounded-slab border border-line bg-paper p-6 md:p-9">
@@ -123,18 +174,40 @@ export default function Sell() {
         </div>
 
         <div className="mb-6">
-          <label className="field-label" htmlFor="photos">Upload Photos (1–3)</label>
+          <label className="field-label" htmlFor="photos">{isEdit ? 'Photos' : 'Upload Photos (1–3)'}</label>
+          {existingImages.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2.5">
+              {existingImages.map((src, i) => (
+                <div key={src} className="relative">
+                  <img src={src} alt={`Current photo ${i + 1}`}
+                    className="h-[70px] w-[70px] rounded-[10px] border border-line object-cover" />
+                  <button
+                    type="button"
+                    aria-label={`Remove photo ${i + 1}`}
+                    onClick={() => setExistingImages((imgs) => imgs.filter((u) => u !== src))}
+                    className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-ink text-[12px] font-bold text-white shadow hover:bg-coral"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {photoSlots === 0 ? (
+            <p className="text-[13.5px] text-ink-faint">Maximum of 3 photos reached. Remove one (✕) to add a different photo.</p>
+          ) : (
           <div className="rounded-[14px] border-[1.5px] border-dashed border-line bg-[#fbfbf9] p-6 text-center text-[13.5px] text-ink-faint">
             <input
               id="photos"
               type="file"
               accept="image/*"
               multiple
-              onChange={(e) => setFiles(Array.from(e.target.files).slice(0, 3))}
+              onChange={(e) => setFiles(Array.from(e.target.files).slice(0, photoSlots))}
               className="mx-auto mb-2 block"
             />
-            PNG or JPG, up to 3 images
+            {isEdit ? `Add up to ${photoSlots} more image${photoSlots === 1 ? '' : 's'}` : 'PNG or JPG, up to 3 images'}
           </div>
+          )}
           {previews.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2.5">
               {previews.map((src, i) => (
@@ -147,9 +220,13 @@ export default function Sell() {
 
         <div className="flex gap-2.5">
           <button className="btn-accent" onClick={publish} disabled={saving}>
-            {saving ? 'Publishing…' : 'Publish Listing'}
+            {saving ? (isEdit ? 'Saving…' : 'Publishing…') : isEdit ? 'Save Changes' : 'Publish Listing'}
           </button>
-          <button className="btn-ghost" onClick={() => toast('Draft saved')}>Save Draft</button>
+          {isEdit ? (
+            <button className="btn-ghost" onClick={() => navigate('/dashboard')}>Cancel</button>
+          ) : (
+            <button className="btn-ghost" onClick={() => toast('Draft saved')}>Save Draft</button>
+          )}
         </div>
       </div>
     </div>
