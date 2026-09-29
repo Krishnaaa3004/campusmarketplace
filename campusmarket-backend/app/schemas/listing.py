@@ -1,0 +1,106 @@
+from datetime import datetime
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+CATEGORY_ART = {
+    "Textbooks": {"emoji": "📘", "bg": "#F1EAFF"},
+    "Lab Gear": {"emoji": "📐", "bg": "#EAF0FF"},
+    "Electronics": {"emoji": "🔌", "bg": "#EAFBF0"},
+    "Dorm Essentials": {"emoji": "🛏️", "bg": "#FFECEA"},
+    "Project Kits": {"emoji": "🧰", "bg": "#FFF3D6"},
+    "Sports": {"emoji": "🏸", "bg": "#FFF0F5"},
+    "Clothing & Event Wear": {"emoji": "🧥", "bg": "#FFF6E0"},
+}
+DEFAULT_ART = {"emoji": "📦", "bg": "#EFEFEC"}
+
+
+class Art(BaseModel):
+    emoji: str
+    bg: str
+
+
+class SellerOut(BaseModel):
+    id: str
+    name: str | None = None
+    campus_id: int = 1
+    campus: str | None = None
+    verified: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ListingCreate(BaseModel):
+    title: str = Field(min_length=1)
+    category: str
+    listing_type: Literal["sale", "rent", "free"] = "sale"
+    price: float = 0
+    condition: str
+    description: Optional[str] = None
+    pickup_spot: str = Field(min_length=1)
+
+
+class ListingUpdate(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    listing_type: Optional[Literal["sale", "rent", "free"]] = None
+    price: Optional[float] = None
+    condition: Optional[str] = None
+    description: Optional[str] = None
+    pickup_spot: Optional[str] = None
+
+
+class StatusUpdate(BaseModel):
+    status: Literal["available", "reserved", "sold"]
+
+
+class ListingOut(BaseModel):
+    id: int
+    title: str
+    category: str
+    listing_type: str
+    price: float
+    condition: str
+    description: str | None = None
+    pickup_spot: str
+    status: str
+    campus_id: int
+    images: list[str] = []
+    created_at: datetime
+    seller: SellerOut
+    art: Art
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_orm_with_art(cls, listing):
+        art = CATEGORY_ART.get(listing.category, DEFAULT_ART)
+        return cls(
+            id=listing.id,
+            title=listing.title,
+            category=listing.category,
+            listing_type=listing.listing_type,
+            price=listing.price,
+            condition=listing.condition,
+            description=listing.description,
+            pickup_spot=listing.pickup_spot,
+            status=listing.status,
+            campus_id=listing.campus_id,
+            images=listing.images or [],
+            created_at=listing.created_at,
+            seller=SellerOut(
+                id=str(listing.owner.id),
+                name=listing.owner.name,
+                campus_id=1,
+                campus=listing.owner.college,
+                verified=listing.owner.verified,
+            ),
+            art=Art(**art),
+        )
+
+
+class ListingListOut(BaseModel):
+    items: list[ListingOut]
+    total: int

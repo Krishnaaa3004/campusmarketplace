@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth.jsx'
 
 export default function Onboarding() {
-  const { login, completeProfile } = useAuth()
+  const { completeProfile } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: '', college: '', course: '', year: '' })
   const [busy, setBusy] = useState(false)
@@ -13,9 +13,12 @@ export default function Onboarding() {
   async function finish(e) {
     e.preventDefault()
     setBusy(true)
-    await login(form.email || 'student@polaris.edu')
-    await completeProfile(form)
-    navigate('/marketplace', { replace: true })
+    try {
+      await completeProfile(form)
+      navigate('/marketplace', { replace: true })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (

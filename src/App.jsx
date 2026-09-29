@@ -30,10 +30,10 @@ export default function App() {
           <Route path="/resources/:id" element={<ResourceDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="/onboarding" element={<Onboarding />} />
 
           {/* Verified students only */}
           <Route element={<RequireAuth />}>
+            <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/sell" element={<Sell />} />
             <Route path="/dashboard" element={<Dashboard />} />
           </Route>
