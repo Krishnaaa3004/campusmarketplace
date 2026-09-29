@@ -49,6 +49,8 @@ class ListingUpdate(BaseModel):
     condition: Optional[str] = None
     description: Optional[str] = None
     pickup_spot: Optional[str] = None
+    # URLs of photos to KEEP. Any current photo not listed here is removed.
+    images: Optional[list[str]] = None
 
 
 class StatusUpdate(BaseModel):
@@ -92,7 +94,7 @@ class ListingOut(BaseModel):
             created_at=listing.created_at,
             seller=SellerOut(
                 id=str(listing.owner.id),
-                name=listing.owner.name,
+                name=listing.owner.name or listing.owner.email.split("@")[0],
                 campus_id=1,
                 campus=listing.owner.college,
                 verified=listing.owner.verified,

@@ -15,7 +15,7 @@ app = FastAPI(title=settings.APP_NAME)
 app.include_router(auth_router)
 app.include_router(listings_router)
 
-UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads"  # must match routes/listings.py
 UPLOAD_DIR.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 

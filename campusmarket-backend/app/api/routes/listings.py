@@ -2,6 +2,7 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
@@ -22,6 +23,23 @@ router = APIRouter(prefix="/api/listings", tags=["listings"])
 
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+MAX_IMAGES = 3
+
+
+def _delete_upload_files(urls: list[str]) -> None:
+    """Best-effort removal of uploaded files. Only touches files directly inside UPLOAD_DIR."""
+    for url in urls:
+        name = Path(urlparse(url).path).name
+        if not name:
+            continue
+        target = UPLOAD_DIR / name
+        try:
+            if target.parent == UPLOAD_DIR and target.is_file():
+                target.unlink()
+        except OSError:
+            pass
 
 
 def _get_owned_listing(listing_id: int, db: Session, user: User) -> Listing:
@@ -114,6 +132,8 @@ def create_listing(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if not user.profile_completed:
+        raise HTTPException(status_code=403, detail="Complete your profile before listing an item")
     listing = Listing(**payload.model_dump(), owner_id=user.id)
     db.add(listing)
     db.commit()
@@ -129,9 +149,20 @@ def update_listing(
     user: User = Depends(get_current_user),
 ):
     listing = _get_owned_listing(listing_id, db, user)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+
+    keep = data.pop("images", None)
+    removed: list[str] = []
+    if keep is not None:
+        current = listing.images or []
+        kept = [u for u in current if u in keep]  # can only keep photos it already has
+        removed = [u for u in current if u not in keep]
+        listing.images = kept
+
+    for key, value in data.items():
         setattr(listing, key, value)
     db.commit()
+    _delete_upload_files(removed)
     db.refresh(listing)
     return ListingOut.from_orm_with_art(listing)
 
@@ -171,8 +202,14 @@ def upload_images(
 ):
     listing = _get_owned_listing(listing_id, db, user)
 
+    room = MAX_IMAGES - len(listing.images or [])
+    if room <= 0:
+        raise HTTPException(status_code=400, detail=f"A listing can have at most {MAX_IMAGES} photos")
+
     urls = []
-    for f in files[:3]:
+    for f in files[:room]:
+        if f.content_type and not f.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Only image files are allowed")
         ext = Path(f.filename or "").suffix or ".jpg"
         filename = f"{uuid.uuid4().hex}{ext}"
         dest = UPLOAD_DIR / filename
