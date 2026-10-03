@@ -6,9 +6,9 @@ import { useWishlist } from '../hooks/useWishlist.jsx'
 import { initial } from '../lib/format.js'
 
 const LINKS = [
+  { to: '/#how-it-works', label: 'How It Works' },
   { to: '/marketplace', label: 'Marketplace' },
   { to: '/resources', label: 'Resource Hub' },
-  { to: '/#how-it-works', label: 'How It Works' },
 ]
 
 export default function Navbar() {
