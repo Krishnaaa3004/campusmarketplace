@@ -166,8 +166,54 @@ export function setAccountType(accountType) {
   return delay(seed.currentUser)
 }
 
+export function updateProfile(payload) {
+  Object.assign(seed.currentUser, payload)
+  return delay(seed.currentUser)
+}
+
+export function uploadAvatar(file) {
+  seed.currentUser.avatar_url = URL.createObjectURL(file)
+  return delay(seed.currentUser)
+}
+
+export function removeAvatar() {
+  seed.currentUser.avatar_url = null
+  return delay(seed.currentUser)
+}
+
 export function me() {
   return localStorage.getItem('cm_token') ? delay(seed.currentUser, 150) : Promise.resolve(null)
+}
+
+let productRequests = [
+  {
+    id: 1, product: 'Casio fx-991CW calculator', description: 'Need it for tomorrow\'s exam, can rent too',
+    created_at: new Date(Date.now() - 3600e3).toISOString(),
+    requester: { id: '2', name: 'Rhea M.', email: 'rhea@polaris.edu', phone: null, avatar_url: null },
+  },
+]
+
+export function createRequest({ product, description }) {
+  const u = seed.currentUser
+  const req = {
+    id: nextId++, product, description: description || null, created_at: new Date().toISOString(),
+    requester: { id: String(u.id), name: u.name, email: u.email, phone: u.phone || null, avatar_url: u.avatar_url || null },
+  }
+  productRequests = [req, ...productRequests]
+  return delay(req)
+}
+
+export function listRequests() {
+  return delay(productRequests.filter((r) => r.requester.id !== String(seed.currentUser.id)))
+}
+
+export function myRequests() {
+  return delay(productRequests.filter((r) => r.requester.id === String(seed.currentUser.id)))
+}
+
+export function deleteRequest(id) {
+  productRequests = productRequests.filter((r) => r.id !== Number(id))
+  return delay(null)
 }
 
 export function listCampuses() { return delay(campuses) }

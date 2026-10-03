@@ -10,6 +10,8 @@ import ImageLightbox from '../components/ImageLightbox.jsx'
 import RecommendedForYou from '../components/RecommendedForYou.jsx'
 import { recordView } from '../lib/recommendations.js'
 import { formatPrice, contactLink, titleCase } from '../lib/format.js'
+import Avatar from '../components/Avatar.jsx'
+import LinkifiedText from '../components/LinkifiedText.jsx'
 
 export default function ListingDetail() {
   const { id } = useParams()
@@ -91,12 +93,10 @@ export default function ListingDetail() {
             <div><dt className="inline font-semibold text-ink">Listing type: </dt><dd className="inline">{titleCase(l.listing_type)}</dd></div>
           </dl>
 
-          <p className="my-4 text-[15px] leading-relaxed text-ink-soft">{l.description}</p>
+          <p className="my-4 text-[15px] leading-relaxed text-ink-soft whitespace-pre-line"><LinkifiedText text={l.description} /></p>
 
           <div className="my-5 flex items-center gap-3.5 rounded-card border border-line bg-paper p-4">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sun font-display font-bold">
-              {(l.seller.name || '?')[0].toUpperCase()}
-            </span>
+            <Avatar user={l.seller} size={44} className="bg-sun font-display text-ink" />
             <div>
               <p className="text-[14.5px] font-semibold">{l.seller.name || 'Campus student'}</p>
               <p className="text-[13px] text-ink-soft">{l.seller.campus || ''}</p>
@@ -111,7 +111,7 @@ export default function ListingDetail() {
 
           <div className="flex flex-wrap gap-2.5">
             <a className="btn-accent" href={links.whatsapp} target="_blank" rel="noopener noreferrer">Contact Seller</a>
-            <a className="btn-ghost" href={links.email}>Email instead</a>
+            <a className="btn-ghost" href={links.email} target="_blank" rel="noopener noreferrer">Email instead</a>
             <button className="btn-ghost" onClick={() => setReporting(true)}>Report Listing</button>
           </div>
 

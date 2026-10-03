@@ -39,6 +39,21 @@ export function AuthProvider({ children }) {
       setUser(updated)
       return updated
     },
+    async updateProfile(payload) {
+      const updated = await authApi.updateProfile(payload)
+      setUser(updated)
+      return updated
+    },
+    async uploadAvatar(file) {
+      const updated = await authApi.uploadAvatar(file)
+      setUser(updated)
+      return updated
+    },
+    async removeAvatar() {
+      const updated = await authApi.removeAvatar()
+      setUser(updated)
+      return updated
+    },
     async logout() {
       await authApi.logout()
       setUser(null)

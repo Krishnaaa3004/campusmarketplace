@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listingsApi } from '../services/api.js'
 import { useApi } from '../hooks/useApi.js'
@@ -6,7 +6,9 @@ import { useAuth } from '../hooks/useAuth.jsx'
 import { useToast } from '../hooks/useToast.jsx'
 import { SkeletonRows } from '../components/SkeletonCard.jsx'
 import EmptyState from '../components/EmptyState.jsx'
-import { formatPrice, titleCase } from '../lib/format.js'
+import Avatar from '../components/Avatar.jsx'
+import { useRequestNotifications } from '../hooks/useRequestNotifications.js'
+import { formatPrice, titleCase, timeAgo } from '../lib/format.js'
 
 const TABS = [
   { label: 'Active', status: 'available' },
@@ -40,6 +42,8 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-[1180px] px-6 py-9">
+      <BuyerRequests />
+
       <h1 className="mb-6 text-[30px] font-bold">My Listings</h1>
 
       <div className="mb-6 flex border-b border-line">
@@ -99,6 +103,77 @@ export default function Dashboard() {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+function BuyerRequests() {
+  const { items, loading, unread, isNew, markAllSeen } = useRequestNotifications({ freeze: true })
+  const [showAll, setShowAll] = useState(false)
+
+  // Opening the dashboard clears the navbar badge; the "New" markers here
+  // stay until the seller leaves, since this list keeps its mount-time snapshot.
+  useEffect(() => {
+    if (!loading) markAllSeen()
+  }, [loading, markAllSeen])
+
+  const shown = showAll ? items : items.slice(0, 5)
+
+  return (
+    <section id="requests" className="mb-10 scroll-mt-24 rounded-slab border border-line bg-paper p-5 md:p-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-[19px] font-semibold">
+          Buyer requests
+          {unread > 0 && (
+            <span className="rounded-pill bg-coral px-2 py-0.5 text-[11.5px] font-bold text-white">{unread} new</span>
+          )}
+        </h2>
+        <p className="text-[13px] text-ink-faint">Students looking for something you might have</p>
+      </div>
+
+      {loading && <div className="skeleton h-20" />}
+
+      {!loading && items.length === 0 && (
+        <p className="rounded-card bg-bg px-4 py-6 text-center text-[14px] text-ink-soft">
+          No requests right now. You'll see them here when students post one.
+        </p>
+      )}
+
+      {!loading && shown.map((r) => <RequestRow key={r.id} r={r} fresh={isNew(r)} />)}
+
+      {!loading && items.length > 5 && (
+        <button className="mt-2 text-[13.5px] font-semibold text-brand hover:underline" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? 'Show fewer' : `Show all ${items.length} requests`}
+        </button>
+      )}
+    </section>
+  )
+}
+
+function RequestRow({ r, fresh }) {
+  const { requester } = r
+  const greeting = `Hi ${requester.name}! I saw your request for "${r.product}" on CampusMarket. I might have it.`
+  const reply = requester.phone
+    ? `https://wa.me/${requester.phone}?text=${encodeURIComponent(greeting)}`
+    : `https://mail.google.com/mail/?${new URLSearchParams({
+        view: 'cm', fs: '1', to: requester.email, su: `CampusMarket — ${r.product}`, body: greeting,
+      })}`
+
+  return (
+    <div className={`mb-2.5 flex items-start gap-3.5 rounded-card border p-3.5 ${fresh ? 'border-brand/30 bg-brand-tint/50' : 'border-line'}`}>
+      <Avatar user={requester} size={38} className="bg-sun font-display text-ink" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] text-ink-soft">
+          <span className="font-semibold text-ink">{requester.name}</span> is looking for
+          <span className="ml-2 text-ink-faint">· {timeAgo(r.created_at)}</span>
+          {fresh && <span className="ml-2 rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-bold text-white">New</span>}
+        </p>
+        <p className="mt-0.5 break-words text-[15px] font-semibold">{r.product}</p>
+        {r.description && <p className="mt-0.5 break-words text-[13.5px] text-ink-soft">{r.description}</p>}
+      </div>
+      <a className="btn-ghost btn-sm flex-none" href={reply} target="_blank" rel="noopener noreferrer">
+        {requester.phone ? 'Reply on WhatsApp' : 'Reply by Email'}
+      </a>
     </div>
   )
 }

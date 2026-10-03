@@ -5,6 +5,7 @@ import { useApi } from '../hooks/useApi.js'
 import { VerifiedBadge } from '../components/Badge.jsx'
 import ReportModal from '../components/ReportModal.jsx'
 import EmptyState from '../components/EmptyState.jsx'
+import LinkifiedText from '../components/LinkifiedText.jsx'
 
 export default function ResourceDetail() {
   const { id } = useParams()
@@ -40,7 +41,7 @@ export default function ResourceDetail() {
         </div>
       </dl>
 
-      <p className="text-[15px] leading-relaxed text-ink-soft">{r.description}</p>
+      <p className="text-[15px] leading-relaxed text-ink-soft whitespace-pre-line"><LinkifiedText text={r.description} /></p>
 
       <div className="my-5 rounded-card border-[1.5px] border-dashed border-line bg-paper p-10 text-center text-ink-faint">
         Document preview

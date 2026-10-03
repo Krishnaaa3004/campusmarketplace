@@ -26,6 +26,9 @@ class SellerOut(BaseModel):
     campus_id: int = 1
     campus: str | None = None
     verified: bool
+    avatar_url: str | None = None
+    phone: str | None = None  # shared so buyers can WhatsApp the seller
+    email: str | None = None  # shared so buyers can email the seller
 
     class Config:
         from_attributes = True
@@ -98,6 +101,9 @@ class ListingOut(BaseModel):
                 campus_id=1,
                 campus=listing.owner.college,
                 verified=listing.owner.verified,
+                avatar_url=listing.owner.avatar_url,
+                phone=listing.owner.phone,
+                email=listing.owner.email,
             ),
             art=Art(**art),
         )

@@ -71,12 +71,33 @@ export const authApi = {
   // POST /api/auth/account-type  body: { account_type: "seller" }  (buyer -> seller upgrade)
   setAccountType: (accountType) =>
     pick(() => http.post('/auth/account-type', { account_type: accountType }), () => mock.setAccountType(accountType))(),
+  // PATCH /api/users/me  body: any of { name, college, course, year, phone }
+  updateProfile: (payload) => pick(() => http.patch('/users/me', payload), () => mock.updateProfile(payload))(),
+  // POST /api/users/me/avatar  (multipart, field "file")
+  uploadAvatar: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return pick(() => http.postForm('/users/me/avatar', fd), () => mock.uploadAvatar(file))()
+  },
+  // DELETE /api/users/me/avatar
+  removeAvatar: () => pick(() => http.del('/users/me/avatar'), () => mock.removeAvatar())(),
   // GET /api/users/me
   me: () => pick(() => http.get('/users/me'), () => mock.me())(),
   logout: () => {
     localStorage.removeItem('cm_token')
     return Promise.resolve()
   },
+}
+
+export const requestsApi = {
+  // POST /api/requests  body: { product, description }  (each max 70 chars)
+  create: (payload) => pick(() => http.post('/requests', payload), () => mock.createRequest(payload))(),
+  // GET /api/requests/mine  — requests the current user posted
+  mine: () => pick(() => http.get('/requests/mine'), () => mock.myRequests())(),
+  // GET /api/requests  — sellers' notification feed
+  list: () => pick(() => http.get('/requests'), () => mock.listRequests())(),
+  // DELETE /api/requests/:id
+  remove: (id) => pick(() => http.del(`/requests/${id}`), () => mock.deleteRequest(id))(),
 }
 
 export const campusesApi = {

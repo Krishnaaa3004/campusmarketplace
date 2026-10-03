@@ -1,6 +1,9 @@
+import shutil
+import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -12,6 +15,7 @@ from app.core.security import (
     hash_otp,
     verify_otp,
 )
+from app.api.routes.listings import UPLOAD_DIR, _delete_upload_files
 from app.db.session import get_db  # <-- point this at your existing db session dependency
 from app.models.otp import OTPCode
 from app.models.user import User
@@ -21,11 +25,15 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     ProfileRequest,
+    ProfileUpdateRequest,
     SignupRequest,
     UserOut,
 )
 
 router = APIRouter(prefix="/api", tags=["auth"])
+
+MAX_AVATAR_BYTES = 5 * 1024 * 1024
+AVATAR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
 def _check_domain(email: str) -> None:
@@ -121,6 +129,65 @@ def set_account_type(
     user.account_type = payload.account_type
     db.commit()
     db.refresh(user)
+    return user
+
+
+@router.patch("/users/me", response_model=UserOut)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/users/me/avatar", response_model=UserOut)
+def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="Profile picture must be an image")
+    ext = Path(file.filename or "").suffix.lower() or ".jpg"
+    if ext not in AVATAR_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Use a JPG, PNG, WEBP or GIF image")
+
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    if size > MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=400, detail="Profile picture must be under 5 MB")
+
+    filename = f"avatar-{uuid.uuid4().hex}{ext}"
+    with (UPLOAD_DIR / filename).open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    old = user.avatar_url
+    user.avatar_url = str(request.base_url) + f"uploads/{filename}"
+    db.commit()
+    db.refresh(user)
+    if old:
+        _delete_upload_files([old])
+    return user
+
+
+@router.delete("/users/me/avatar", response_model=UserOut)
+def remove_avatar(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    old = user.avatar_url
+    user.avatar_url = None
+    db.commit()
+    db.refresh(user)
+    if old:
+        _delete_upload_files([old])
     return user
 
 

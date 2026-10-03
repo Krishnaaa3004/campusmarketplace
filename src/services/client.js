@@ -46,7 +46,7 @@ async function request(path, { method = 'GET', body, params, isForm } = {}) {
       typeof detail === 'string'
         ? detail
         : Array.isArray(detail)
-          ? detail.map((d) => d.msg).join(', ')
+          ? detail.map((d) => String(d.msg).replace(/^Value error, /, '')).join(', ')
           : 'Something went wrong. Try again.'
     throw new ApiError(message, res.status, detail)
   }

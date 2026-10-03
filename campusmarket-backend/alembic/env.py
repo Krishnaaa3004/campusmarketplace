@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.models.user import User
 from app.models.otp import OTPCode
 from app.models.listing import Listing
+from app.models.product_request import ProductRequest
 
 target_metadata = Base.metadata
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
