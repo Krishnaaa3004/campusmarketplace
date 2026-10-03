@@ -57,8 +57,9 @@ export const reportsApi = {
 }
 
 export const authApi = {
-  // POST /api/auth/signup  body: { email }  -> sends OTP / magic link
-  signup: (email) => pick(() => http.post('/auth/signup', { email }), () => mock.signup(email))(),
+  // POST /api/auth/signup  body: { email, account_type: "buyer" | "seller" }  -> sends OTP / magic link
+  signup: (email, accountType = 'buyer') =>
+    pick(() => http.post('/auth/signup', { email, account_type: accountType }), () => mock.signup(email, accountType))(),
   // POST /api/auth/login  body: { email, otp }
   login: (email, otp) => pick(() => http.post('/auth/login', { email, otp }), () => mock.login(email, otp))(),
   // POST /api/auth/profile — completes onboarding (name, college, course, year)
@@ -67,6 +68,9 @@ export const authApi = {
   // POST /api/auth/interests  body: { interests: ["Textbooks", ...] }
   saveInterests: (interests) =>
     pick(() => http.post('/auth/interests', { interests }), () => mock.saveInterests(interests))(),
+  // POST /api/auth/account-type  body: { account_type: "seller" }  (buyer -> seller upgrade)
+  setAccountType: (accountType) =>
+    pick(() => http.post('/auth/account-type', { account_type: accountType }), () => mock.setAccountType(accountType))(),
   // GET /api/users/me
   me: () => pick(() => http.get('/users/me'), () => mock.me())(),
   logout: () => {

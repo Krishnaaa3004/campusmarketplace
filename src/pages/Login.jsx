@@ -55,7 +55,7 @@ export default function Login() {
           <form onSubmit={sendCode}>
             <label className="field-label" htmlFor="email">Email</label>
             <input id="email" type="email" required className="field-input mb-4" value={email}
-              onChange={(e) => setEmail(e.target.value)} placeholder="you@college.edu" />
+              onChange={(e) => setEmail(e.target.value)} placeholder="you@medhaviskillsuniversity.edu.in" />
             {error && <p className="mb-3 text-[13px] text-coral">{error}</p>}
             <button className="btn-primary w-full" disabled={busy}>{busy ? 'Sending…' : 'Send code'}</button>
           </form>

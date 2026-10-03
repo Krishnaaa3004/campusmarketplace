@@ -2,9 +2,10 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth.jsx'
 
 // Route guard. Unverified students never reach marketplace interactions;
-// non-admins never reach /admin. The backend must enforce the same rules.
-export default function RequireAuth({ role }) {
-  const { user, loading, isVerified } = useAuth()
+// non-admins never reach /admin; buyers never reach seller pages.
+// The backend must enforce the same rules.
+export default function RequireAuth({ role, seller = false }) {
+  const { user, loading, isVerified, isSeller } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -15,6 +16,9 @@ export default function RequireAuth({ role }) {
   }
   if (role && user.role !== role) {
     return <Navigate to="/marketplace" replace />
+  }
+  if (seller && !isSeller) {
+    return <Navigate to="/profile" state={{ needsSeller: true }} replace />
   }
   return <Outlet />
 }

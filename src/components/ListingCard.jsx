@@ -1,9 +1,14 @@
 import { Link } from 'react-router-dom'
 import { TypeBadge, VerifiedBadge, StatusPill } from './Badge.jsx'
 import { formatPrice } from '../lib/format.js'
+import { useWishlist } from '../hooks/useWishlist.jsx'
+import { useToast } from '../hooks/useToast.jsx'
 
 export default function ListingCard({ listing, compact = false }) {
   const { id, title, price, condition, listing_type, status, art, seller, images } = listing
+  const { isSaved, toggle } = useWishlist()
+  const toast = useToast()
+  const saved = isSaved(id)
   const thumbnail = images && images.length > 0 ? images[0] : null
 
   return (
@@ -18,11 +23,16 @@ export default function ListingCard({ listing, compact = false }) {
         <span className="absolute left-2.5 top-2.5"><TypeBadge type={listing_type} /></span>
         <button
           type="button"
-          aria-label="Save to favourites"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
-          className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm shadow"
+          aria-label={saved ? 'Remove from wishlist' : 'Save to wishlist'}
+          aria-pressed={saved}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            toast(toggle(listing) ? 'Saved to your wishlist' : 'Removed from your wishlist')
+          }}
+          className={`absolute right-2.5 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm shadow transition hover:scale-110 ${saved ? 'text-coral' : 'text-ink'}`}
         >
-          ♡
+          {saved ? '♥' : '♡'}
         </button>
         {thumbnail ? (
           <img src={thumbnail} alt={title} className="h-full w-full object-cover" />

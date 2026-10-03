@@ -137,12 +137,13 @@ export function createReport(payload) {
   return delay({ ok: true })
 }
 
-export function signup(email) {
+export function signup(email, accountType = 'buyer') {
   const domain = email.split('@')[1]
   const campus = campuses.find((c) => c.email_domain === domain && c.is_active)
   if (!campus) {
     return Promise.reject(new Error('That domain is not an approved campus yet. Ask your admin to add it.'))
   }
+  seed.currentUser.account_type = accountType
   return delay({ ok: true, message: 'Magic link sent. Check your college inbox.' })
 }
 
@@ -157,6 +158,11 @@ export function completeProfile(payload) {
 
 export function saveInterests(interests) {
   seed.currentUser.interests = interests
+  return delay(seed.currentUser)
+}
+
+export function setAccountType(accountType) {
+  seed.currentUser.account_type = accountType
   return delay(seed.currentUser)
 }
 

@@ -16,6 +16,8 @@ export function AuthProvider({ children }) {
     loading,
     isVerified: Boolean(user?.verified),
     isAdmin: user?.role === 'admin',
+    // Sellers can buy and sell; buyers can only buy. Admins can do everything.
+    isSeller: user?.account_type === 'seller' || user?.role === 'admin',
     async login(email, otp) {
       const res = await authApi.login(email, otp)
       if (res?.token) localStorage.setItem('cm_token', res.token)
@@ -29,6 +31,11 @@ export function AuthProvider({ children }) {
     },
     async saveInterests(interests) {
       const updated = await authApi.saveInterests(interests)
+      setUser(updated)
+      return updated
+    },
+    async becomeSeller() {
+      const updated = await authApi.setAccountType('seller')
       setUser(updated)
       return updated
     },

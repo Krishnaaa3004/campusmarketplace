@@ -1,11 +1,21 @@
 import uuid
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, field_validator
 
 from app.schemas.listing import CATEGORY_ART
 
+# Buyers can only buy; sellers can buy and sell.
+AccountType = Literal["buyer", "seller"]
+
 
 class SignupRequest(BaseModel):
     email: EmailStr
+    account_type: AccountType = "buyer"
+
+
+class AccountTypeRequest(BaseModel):
+    account_type: AccountType
 
 
 class LoginRequest(BaseModel):
@@ -40,6 +50,7 @@ class UserOut(BaseModel):
     course: str | None = None
     year: str | None = None
     role: str
+    account_type: str = "buyer"
     verified: bool
     profile_completed: bool
     interests: list[str] = []

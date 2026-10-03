@@ -3,11 +3,17 @@ import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../services/api.js'
 import { useAuth } from '../hooks/useAuth.jsx'
 
+const ACCOUNT_TYPES = [
+  { value: 'buyer', emoji: '🛍️', title: 'Buyer', body: 'Browse and buy from students on your campus.' },
+  { value: 'seller', emoji: '🏷️', title: 'Seller', body: 'List your own items, and buy too.' },
+]
+
 export default function Signup() {
   const navigate = useNavigate()
   const { login } = useAuth()
   const [step, setStep] = useState('email') // 'email' | 'otp'
   const [email, setEmail] = useState('')
+  const [accountType, setAccountType] = useState('buyer')
   const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -17,7 +23,7 @@ export default function Signup() {
     setBusy(true)
     setError('')
     try {
-      await authApi.signup(email)
+      await authApi.signup(email, accountType)
       setStep('otp')
     } catch (err) {
       setError(err.message)
@@ -48,9 +54,38 @@ export default function Signup() {
           <p className="mb-6 text-sm text-ink-soft">Sign up with your college email to get verified.</p>
 
           <form onSubmit={sendCode}>
+            <fieldset className="mb-5">
+              <legend className="field-label">I want to join as a</legend>
+              <div className="grid grid-cols-2 gap-3">
+                {ACCOUNT_TYPES.map((t) => {
+                  const active = accountType === t.value
+                  return (
+                    <label
+                      key={t.value}
+                      className={`cursor-pointer rounded-card border-[1.5px] p-3.5 transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand ${
+                        active ? 'border-brand bg-brand-tint' : 'border-line hover:border-ink-faint'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="account_type"
+                        value={t.value}
+                        checked={active}
+                        onChange={() => setAccountType(t.value)}
+                        className="sr-only"
+                      />
+                      <span className="mb-1 block text-[22px]" aria-hidden>{t.emoji}</span>
+                      <span className="block text-[15px] font-semibold">{t.title}</span>
+                      <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-soft">{t.body}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </fieldset>
+
             <label className="field-label" htmlFor="email">College email</label>
             <input id="email" type="email" required className="field-input mb-4" value={email}
-              onChange={(e) => setEmail(e.target.value)} placeholder="you@college.edu" />
+              onChange={(e) => setEmail(e.target.value)} placeholder="you@medhaviskillsuniversity.edu.in" />
             {error && <p className="mb-3 text-[13px] text-coral">{error}</p>}
             <button className="btn-primary w-full" disabled={busy}>
               {busy ? 'Sending…' : 'Send verification code'}

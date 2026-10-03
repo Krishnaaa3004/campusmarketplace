@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.core.security import require_seller
 from app.db.session import get_db
 from app.models.listing import Listing
 from app.models.user import User
@@ -153,7 +153,7 @@ def get_listing(listing_id: int, db: Session = Depends(get_db)):
 def create_listing(
     payload: ListingCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_seller),
 ):
     if not user.profile_completed:
         raise HTTPException(status_code=403, detail="Complete your profile before listing an item")
@@ -169,7 +169,7 @@ def update_listing(
     listing_id: int,
     payload: ListingUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_seller),
 ):
     listing = _get_owned_listing(listing_id, db, user)
     data = payload.model_dump(exclude_unset=True)
@@ -195,7 +195,7 @@ def set_listing_status(
     listing_id: int,
     payload: StatusUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_seller),
 ):
     listing = _get_owned_listing(listing_id, db, user)
     listing.status = payload.status
@@ -208,7 +208,7 @@ def set_listing_status(
 def delete_listing(
     listing_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_seller),
 ):
     listing = _get_owned_listing(listing_id, db, user)
     db.delete(listing)
@@ -221,7 +221,7 @@ def upload_images(
     request: Request,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_seller),
 ):
     listing = _get_owned_listing(listing_id, db, user)
 

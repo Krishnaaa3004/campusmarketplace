@@ -17,6 +17,7 @@ class User(Base):
     course = Column(String, nullable=True)
     year = Column(String, nullable=True)
     role = Column(String, default="student")  # "student" or "admin"
+    account_type = Column(String, nullable=False, default="buyer", server_default="buyer")  # "buyer" or "seller"
     verified = Column(Boolean, default=False)
     profile_completed = Column(Boolean, default=False)
     interests = Column(ARRAY(String), nullable=False, default=list, server_default="{}")

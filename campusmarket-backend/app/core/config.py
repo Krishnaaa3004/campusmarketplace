@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     OTP_PEPPER: str  # extra secret mixed into the OTP hash
 
     # --- Allowed college domains for signup ---
-    ALLOWED_EMAIL_DOMAINS: list[str] = ["polaris.edu"]
+    ALLOWED_EMAIL_DOMAINS: list[str] = ["medhaviskillsuniversity.edu.in"]
 
     # --- Email (Gmail SMTP) ---
     SMTP_HOST: str = "smtp.gmail.com"

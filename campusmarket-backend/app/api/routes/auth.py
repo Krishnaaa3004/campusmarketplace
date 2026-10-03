@@ -16,6 +16,7 @@ from app.db.session import get_db  # <-- point this at your existing db session 
 from app.models.otp import OTPCode
 from app.models.user import User
 from app.schemas.auth import (
+    AccountTypeRequest,
     InterestsRequest,
     LoginRequest,
     LoginResponse,
@@ -46,7 +47,10 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
-        db.add(User(email=payload.email))
+        db.add(User(email=payload.email, account_type=payload.account_type))
+    elif not user.verified:
+        # Signup was never finished, so the latest choice wins.
+        user.account_type = payload.account_type
 
     db.commit()
     send_otp_email(payload.email, otp)
@@ -99,6 +103,22 @@ def save_interests(
     user: User = Depends(get_current_user),
 ):
     user.interests = payload.interests
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/auth/account-type", response_model=UserOut)
+def set_account_type(
+    payload: AccountTypeRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # Buyers can upgrade to seller. Going back is blocked so a seller's
+    # existing listings never end up owned by an account that can't manage them.
+    if user.account_type == "seller" and payload.account_type == "buyer":
+        raise HTTPException(status_code=400, detail="Seller accounts can't switch back to buyer")
+    user.account_type = payload.account_type
     db.commit()
     db.refresh(user)
     return user

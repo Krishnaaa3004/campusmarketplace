@@ -17,6 +17,8 @@ import Signup from './pages/Signup.jsx'
 import Onboarding from './pages/Onboarding.jsx'
 import Interests from './pages/Interests.jsx'
 import Admin from './pages/Admin.jsx'
+import Wishlist from './pages/Wishlist.jsx'
+import Profile from './pages/Profile.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 export default function App() {
@@ -34,11 +36,17 @@ export default function App() {
           <Route path="/resources/:id" element={<ResourceDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/wishlist" element={<Wishlist />} />
 
           {/* Verified students only */}
           <Route element={<RequireAuth />}>
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/interests" element={<Interests />} />
+            <Route path="/profile" element={<Profile />} />
+          </Route>
+
+          {/* Seller accounts only */}
+          <Route element={<RequireAuth seller />}>
             <Route path="/sell" element={<Sell />} />
             <Route path="/sell/:id/edit" element={<Sell />} />
             <Route path="/dashboard" element={<Dashboard />} />
