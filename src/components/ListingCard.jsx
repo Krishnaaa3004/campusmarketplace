@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { TypeBadge, VerifiedBadge, StatusPill } from './Badge.jsx'
 import { formatPrice } from '../lib/format.js'
 
-export default function ListingCard({ listing }) {
+export default function ListingCard({ listing, compact = false }) {
   const { id, title, price, condition, listing_type, status, art, seller, images } = listing
   const thumbnail = images && images.length > 0 ? images[0] : null
 
@@ -12,7 +12,7 @@ export default function ListingCard({ listing }) {
       className="group block overflow-hidden rounded-card border border-line bg-paper transition hover:-translate-y-[3px] hover:shadow-lift"
     >
       <div
-        className="relative flex h-[130px] items-center justify-center overflow-hidden text-[44px]"
+        className={`relative flex items-center justify-center overflow-hidden ${compact ? 'h-[96px] text-[34px]' : 'h-[130px] text-[44px]'}`}
         style={{ background: art?.bg || '#EFEFEC' }}
       >
         <span className="absolute left-2.5 top-2.5"><TypeBadge type={listing_type} /></span>
@@ -31,14 +31,16 @@ export default function ListingCard({ listing }) {
         )}
       </div>
 
-      <div className="p-3.5">
-        <h3 className="text-[14.5px] font-semibold leading-snug">{title}</h3>
-        <p className="mt-1 font-display text-[17px] font-bold">{formatPrice(price)}</p>
-        <p className="mt-1 text-[12.5px] text-ink-faint">{[condition, seller?.campus].filter(Boolean).join(' · ')}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <VerifiedBadge />
-          <StatusPill status={status} />
-        </div>
+      <div className={compact ? 'p-3' : 'p-3.5'}>
+        <h3 className={`font-semibold leading-snug ${compact ? 'truncate text-[13.5px]' : 'text-[14.5px]'}`}>{title}</h3>
+        <p className={`mt-1 font-display font-bold ${compact ? 'text-[15px]' : 'text-[17px]'}`}>{formatPrice(price)}</p>
+        <p className={`mt-1 text-ink-faint ${compact ? 'truncate text-[12px]' : 'text-[12.5px]'}`}>{[condition, seller?.campus].filter(Boolean).join(' · ')}</p>
+        {!compact && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <VerifiedBadge />
+            <StatusPill status={status} />
+          </div>
+        )}
       </div>
     </Link>
   )

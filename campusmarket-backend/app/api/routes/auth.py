@@ -16,6 +16,7 @@ from app.db.session import get_db  # <-- point this at your existing db session 
 from app.models.otp import OTPCode
 from app.models.user import User
 from app.schemas.auth import (
+    InterestsRequest,
     LoginRequest,
     LoginResponse,
     ProfileRequest,
@@ -86,6 +87,18 @@ def complete_profile(
     user.course = payload.course
     user.year = payload.year
     user.profile_completed = True
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/auth/interests", response_model=UserOut)
+def save_interests(
+    payload: InterestsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    user.interests = payload.interests
     db.commit()
     db.refresh(user)
     return user

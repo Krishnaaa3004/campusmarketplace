@@ -15,7 +15,7 @@ export default function RecommendedForYou({ excludeId, title = 'Recommended for 
         <h2 className="text-[19px] font-bold">{title}</h2>
         <p className="mt-1 text-[13px] text-ink-faint">
           {personalized
-            ? 'Based on what you\'ve been browsing.'
+            ? 'Based on your interests and what you\'ve been browsing.'
             : 'Popular picks to get you started — this tailors itself as you browse.'}
         </p>
       </div>

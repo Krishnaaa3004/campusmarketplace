@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 from app.db.base import Base  # <-- point this at your existing declarative Base
 
@@ -19,4 +19,5 @@ class User(Base):
     role = Column(String, default="student")  # "student" or "admin"
     verified = Column(Boolean, default=False)
     profile_completed = Column(Boolean, default=False)
+    interests = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
     created_at = Column(DateTime, default=datetime.utcnow)

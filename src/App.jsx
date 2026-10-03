@@ -15,6 +15,7 @@ import ResourceDetail from './pages/ResourceDetail.jsx'
 import Login from './pages/Login.jsx'
 import Signup from './pages/Signup.jsx'
 import Onboarding from './pages/Onboarding.jsx'
+import Interests from './pages/Interests.jsx'
 import Admin from './pages/Admin.jsx'
 import NotFound from './pages/NotFound.jsx'
 
@@ -37,6 +38,7 @@ export default function App() {
           {/* Verified students only */}
           <Route element={<RequireAuth />}>
             <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/interests" element={<Interests />} />
             <Route path="/sell" element={<Sell />} />
             <Route path="/sell/:id/edit" element={<Sell />} />
             <Route path="/dashboard" element={<Dashboard />} />

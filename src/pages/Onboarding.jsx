@@ -15,7 +15,7 @@ export default function Onboarding() {
     setBusy(true)
     try {
       await completeProfile(form)
-      navigate('/marketplace', { replace: true })
+      navigate('/interests', { replace: true })
     } finally {
       setBusy(false)
     }

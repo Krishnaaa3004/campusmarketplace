@@ -27,6 +27,11 @@ export function AuthProvider({ children }) {
       setUser(updated)
       return updated
     },
+    async saveInterests(interests) {
+      const updated = await authApi.saveInterests(interests)
+      setUser(updated)
+      return updated
+    },
     async logout() {
       await authApi.logout()
       setUser(null)

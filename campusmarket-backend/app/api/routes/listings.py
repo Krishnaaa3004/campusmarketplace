@@ -1,3 +1,4 @@
+import json
 import shutil
 import uuid
 from pathlib import Path
@@ -16,6 +17,7 @@ from app.schemas.listing import (
     ListingListOut,
     ListingOut,
     ListingUpdate,
+    RecommendedOut,
     StatusUpdate,
 )
 
@@ -103,19 +105,40 @@ def list_listings(
     )
 
 
-@router.get("/recommended", response_model=list[ListingOut])
+@router.get("/recommended", response_model=RecommendedOut)
 def recommended_listings(
     exclude_id: Optional[int] = None,
     campus_id: Optional[int] = None,
+    category_scores: Optional[str] = None,  # JSON like {"Electronics": 2.0}, built by the frontend
     db: Session = Depends(get_db),
 ):
+    """Content-based ranking: category affinity + mild same-campus boost + recency tiebreak."""
+    scores: dict[str, float] = {}
+    if category_scores:
+        try:
+            parsed = json.loads(category_scores)
+            if isinstance(parsed, dict):
+                scores = {str(k): float(v) for k, v in parsed.items()}
+        except (ValueError, TypeError):
+            scores = {}  # malformed input just means "no personalization"
+
     query = db.query(Listing).filter(Listing.status == "available")
     if exclude_id:
         query = query.filter(Listing.id != exclude_id)
-    if campus_id:
-        query = query.filter(Listing.campus_id == campus_id)
-    items = query.order_by(Listing.created_at.desc()).limit(6).all()
-    return [ListingOut.from_orm_with_art(i) for i in items]
+    pool = query.order_by(Listing.created_at.desc()).all()
+
+    def score(listing: Listing) -> float:
+        s = scores.get(listing.category, 0.0)
+        if campus_id and listing.campus_id == campus_id:
+            s += 0.5
+        return s
+
+    # sorted() is stable, so equal scores keep the newest-first order from the query.
+    ranked = sorted(pool, key=score, reverse=True)[:8]
+    return RecommendedOut(
+        items=[ListingOut.from_orm_with_art(i) for i in ranked],
+        personalized=bool(scores),
+    )
 
 
 @router.get("/{listing_id}", response_model=ListingOut)

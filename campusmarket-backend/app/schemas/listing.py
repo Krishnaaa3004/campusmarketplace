@@ -106,3 +106,8 @@ class ListingOut(BaseModel):
 class ListingListOut(BaseModel):
     items: list[ListingOut]
     total: int
+
+
+class RecommendedOut(BaseModel):
+    items: list[ListingOut]
+    personalized: bool

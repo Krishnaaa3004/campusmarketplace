@@ -155,6 +155,11 @@ export function completeProfile(payload) {
   return delay({ ...seed.currentUser, ...payload })
 }
 
+export function saveInterests(interests) {
+  seed.currentUser.interests = interests
+  return delay(seed.currentUser)
+}
+
 export function me() {
   return localStorage.getItem('cm_token') ? delay(seed.currentUser, 150) : Promise.resolve(null)
 }

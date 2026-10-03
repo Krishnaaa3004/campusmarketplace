@@ -6,6 +6,9 @@
 
 const KEY = 'cm_view_history'
 const MAX_HISTORY = 30
+// Chosen interests give a new student relevant results before they have browsed anything.
+// Worth roughly one or two recent views, so real browsing quickly takes over.
+const INTEREST_WEIGHT = 2
 
 export function recordView(listing) {
   if (!listing?.category) return
@@ -28,12 +31,15 @@ export function readHistory() {
 
 // Returns { hasHistory, categoryScores } — more recent views count for more,
 // so recommendations shift as interest shifts rather than sticking forever.
-export function categoryAffinity() {
+export function categoryAffinity(interests = []) {
   const history = readHistory()
   const scores = {}
+  interests.forEach((c) => {
+    scores[c] = (scores[c] || 0) + INTEREST_WEIGHT
+  })
   history.forEach((entry, i) => {
     const recencyWeight = 1 + i / history.length // later entries weigh slightly more
     scores[entry.category] = (scores[entry.category] || 0) + recencyWeight
   })
-  return { hasHistory: history.length > 0, categoryScores: scores }
+  return { hasHistory: history.length > 0 || interests.length > 0, categoryScores: scores }
 }

@@ -8,7 +8,7 @@ import EmptyState from '../components/EmptyState.jsx'
 import SearchBar from '../components/SearchBar.jsx'
 import { ChipRow, Select, Toggle } from '../components/FilterBar.jsx'
 import { useAuth } from '../hooks/useAuth.jsx'
-import RecommendedForYou from '../components/RecommendedForYou.jsx'
+import RecommendationBar from '../components/RecommendationBar.jsx'
 
 const PRICE_BANDS = [
   { value: 'any', label: 'Any price', min: undefined, max: undefined },
@@ -58,7 +58,14 @@ export default function Marketplace() {
         <Toggle options={['My Campus', 'Nearby Campuses']} value={scope} onChange={setScope} />
       </div>
 
-      <RecommendedForYou />
+      <RecommendationBar />
+
+      <div className="mb-5 flex items-baseline justify-between gap-4">
+        <h2 className="text-[22px] font-bold">All listings</h2>
+        {!loading && !error && (
+          <span className="text-[13px] text-ink-faint">{items.length} {items.length === 1 ? 'item' : 'items'}</span>
+        )}
+      </div>
 
       <div className="mb-5 flex flex-wrap gap-2.5">
         <SearchBar value={q} onChange={setQ} placeholder="Search textbooks, calculators, lab kits…" />

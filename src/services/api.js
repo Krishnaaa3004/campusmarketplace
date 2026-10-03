@@ -64,6 +64,9 @@ export const authApi = {
   // POST /api/auth/profile — completes onboarding (name, college, course, year)
   completeProfile: (payload) =>
     pick(() => http.post('/auth/profile', payload), () => mock.completeProfile(payload))(),
+  // POST /api/auth/interests  body: { interests: ["Textbooks", ...] }
+  saveInterests: (interests) =>
+    pick(() => http.post('/auth/interests', { interests }), () => mock.saveInterests(interests))(),
   // GET /api/users/me
   me: () => pick(() => http.get('/users/me'), () => mock.me())(),
   logout: () => {
