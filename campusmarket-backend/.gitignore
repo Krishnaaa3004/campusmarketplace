@@ -1,3 +1,6 @@
 
 # uploaded listing images (local dev storage)
 uploads/
+
+# resource PDFs — private, served only via GET /api/resources/{id}/file
+private/

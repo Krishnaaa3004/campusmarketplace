@@ -43,12 +43,53 @@ export const listingsApi = {
     )(),
 }
 
+// Create / update are multipart so the PDF is validated in the same request:
+// a bad file means nothing is created. `file` is optional (sample or full PDF).
+function resourceForm(payload, file, removeFile) {
+  const fd = new FormData()
+  Object.entries(payload).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) fd.append(k, v)
+  })
+  if (file) fd.append('file', file)
+  if (removeFile) fd.append('remove_file', 'true')
+  return fd
+}
+
 export const resourcesApi = {
+  // GET /api/resources?q=&subject=&year=&copy_type=&offer_type=&sort=&mine=
   list: (filters = {}) => pick(() => http.get('/resources', filters), () => mock.listResources(filters))(),
+  // GET /api/resources/facets -> { subjects: [...] }
+  facets: () => pick(() => http.get('/resources/facets'), () => mock.resourceFacets())(),
+  // GET /api/resources/:id  (access, drive_url, file_url and contact depend on the viewer)
   get: (id) => pick(() => http.get(`/resources/${id}`), () => mock.getResource(id))(),
-  create: (payload) => pick(() => http.post('/resources', payload), () => mock.createResource(payload))(),
-  markHelpful: (id) =>
-    pick(() => http.post(`/resources/${id}/helpful`), () => mock.markHelpful(id))(),
+  // POST /api/resources  (multipart)
+  create: (payload, file) =>
+    pick(() => http.postForm('/resources', resourceForm(payload, file)), () => mock.createResource(payload, file))(),
+  // PUT /api/resources/:id  (multipart; a new file replaces the old one)
+  update: (id, payload, file, removeFile = false) =>
+    pick(
+      () => http.putForm(`/resources/${id}`, resourceForm(payload, file, removeFile)),
+      () => mock.updateResource(id, payload, file, removeFile)
+    )(),
+  // DELETE /api/resources/:id
+  remove: (id) => pick(() => http.del(`/resources/${id}`), () => mock.deleteResource(id))(),
+  // PATCH /api/resources/:id/status  body: { status: "available" | "closed" }
+  setStatus: (id, status) =>
+    pick(() => http.patch(`/resources/${id}/status`, { status }), () => mock.setResourceStatus(id, status))(),
+  // POST /api/resources/:id/access  body: { note }
+  requestAccess: (id, note) =>
+    pick(() => http.post(`/resources/${id}/access`, { note }), () => mock.requestResourceAccess(id, note))(),
+  // GET /api/resources/:id/access  (owner / admin)
+  accessRequests: (id) =>
+    pick(() => http.get(`/resources/${id}/access`), () => mock.listResourceAccess(id))(),
+  // PATCH /api/resources/:id/access/:requestId  body: { status: "approved" | "denied" }
+  decideAccess: (id, requestId, status) =>
+    pick(
+      () => http.patch(`/resources/${id}/access/${requestId}`, { status }),
+      () => mock.decideResourceAccess(id, requestId, status)
+    )(),
+  // GET /api/resources/:id/file -> Blob. Fetched with the auth header, never a plain link.
+  file: (id) => pick(() => http.getBlob(`/resources/${id}/file`), () => mock.getResourceFile(id))(),
 }
 
 export const reportsApi = {

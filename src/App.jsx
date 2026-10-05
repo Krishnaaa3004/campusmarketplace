@@ -12,6 +12,7 @@ import Sell from './pages/Sell.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Resources from './pages/Resources.jsx'
 import ResourceDetail from './pages/ResourceDetail.jsx'
+import ResourceForm from './pages/ResourceForm.jsx'
 import Login from './pages/Login.jsx'
 import Signup from './pages/Signup.jsx'
 import Onboarding from './pages/Onboarding.jsx'
@@ -50,6 +51,8 @@ export default function App() {
             <Route path="/sell" element={<Sell />} />
             <Route path="/sell/:id/edit" element={<Sell />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/resources/new" element={<ResourceForm />} />
+            <Route path="/resources/:id/edit" element={<ResourceForm />} />
           </Route>
 
           {/* Admins only */}

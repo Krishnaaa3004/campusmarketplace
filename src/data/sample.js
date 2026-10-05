@@ -11,7 +11,6 @@ export const LISTING_TYPES = [
   { value: 'rent', label: 'Rent' },
   { value: 'free', label: 'Free / Giveaway' },
 ]
-export const RESOURCE_CATEGORIES = ['Notes', 'PYQs', 'Lab Work', 'Cheat Sheets', 'Study Guides', 'Reference Links']
 
 export const campuses = [
   { id: 1, name: 'Polaris Campus', email_domain: 'polaris.edu', location: 'Bengaluru', is_active: true },
@@ -63,27 +62,38 @@ export const listings = [
     description: 'Navy blazer, size M. Good for farewell or a first interview.' },
 ]
 
+// Study material. Preview pages are generated placeholders in mockApi.js; the live
+// API renders real ones server-side (page 1 sharp, pages 2-4 blurred).
+const owner = (id, name, campus_id, phone = null) => ({
+  ...seller(id, name, campus_id), avatar_url: null, phone, email: `${name.split(' ')[0].toLowerCase()}@polaris.edu`,
+})
+
 export const resources = [
-  { id: 1, course_code: 'CS201', title: 'Data Structures — Past Year Questions', department: 'Computer Science',
-    semester: '3rd Semester', category: 'PYQs', helpful_count: 42, resource_url: '#',
-    contributor: { id: 1, name: 'Aashi K.', verified: true },
+  { id: 1, title: 'Data Structures — Past Year Questions', subject: 'Data Structures', year: '2',
+    copy_type: 'soft', offer_type: 'sale', price: 40, delivery: 'pdf', page_count: 18, has_file: true,
+    status: 'available', upi_id: 'aashi@okaxis', owner: owner(1, 'Aashi K.', 1, '919000000001'),
+    created_at: '2026-09-28T10:00:00', updated_at: '2026-09-28T10:00:00',
     description: 'Four years of PYQs sorted by topic, with the recurring question patterns marked.' },
-  { id: 2, course_code: 'MA104', title: 'Linear Algebra — Full Semester Notes', department: 'Mathematics',
-    semester: '2nd Semester', category: 'Notes', helpful_count: 31, resource_url: '#',
-    contributor: { id: 2, name: 'Rhea M.', verified: true },
+  { id: 2, title: 'Linear Algebra — Full Semester Notes', subject: 'Linear Algebra', year: '1',
+    copy_type: 'soft', offer_type: 'free', price: 0, delivery: 'pdf', page_count: 32, has_file: true,
+    status: 'available', owner: owner(2, 'Rhea M.', 1),
+    created_at: '2026-09-26T09:00:00', updated_at: '2026-09-26T09:00:00',
     description: 'Handwritten notes from vector spaces through eigenvalues, scanned and ordered by week.' },
-  { id: 3, course_code: 'EE210', title: 'Circuits Lab — Manual & Observations', department: 'Electrical Engineering',
-    semester: '3rd Semester', category: 'Lab Work', helpful_count: 18, resource_url: '#',
-    contributor: { id: 3, name: 'Dev S.', verified: true },
-    description: 'Lab manual with worked observations for all eight experiments.' },
-  { id: 4, course_code: 'CS305', title: 'DBMS Cheat Sheet', department: 'Computer Science',
-    semester: '5th Semester', category: 'Cheat Sheets', helpful_count: 56, resource_url: '#',
-    contributor: { id: 4, name: 'Wren T.', verified: true },
+  { id: 3, title: 'Circuits Lab — Manual & Observations', subject: 'Electrical Circuits', year: '2',
+    copy_type: 'hard', offer_type: 'sale', price: 120, delivery: null, page_count: 3, has_file: true,
+    pickup_spot: 'EE Block Lobby', status: 'available', upi_id: 'dev.s@ybl', owner: owner(3, 'Dev S.', 2, '919000000003'),
+    created_at: '2026-09-24T15:30:00', updated_at: '2026-09-24T15:30:00',
+    description: 'Printed and spiral-bound lab manual with worked observations for all eight experiments.' },
+  { id: 4, title: 'DBMS Cheat Sheet', subject: 'DBMS', year: '3',
+    copy_type: 'soft', offer_type: 'sale', price: 15, delivery: 'pdf', page_count: 1, has_file: true,
+    status: 'available', owner: owner(4, 'Wren T.', 1),
+    created_at: '2026-09-22T12:00:00', updated_at: '2026-09-22T12:00:00',
     description: 'One page covering normalization, SQL joins, and transaction isolation levels.' },
-  { id: 5, course_code: 'PH101', title: 'Physics I — Study Guide', department: 'Physics',
-    semester: '1st Semester', category: 'Study Guides', helpful_count: 24, resource_url: '#',
-    contributor: { id: 5, name: 'Kabir A.', verified: true },
-    description: 'Concept summaries with solved examples across mechanics and thermodynamics.' },
+  { id: 5, title: 'Physics I — Video Lectures & Slides', subject: 'Physics', year: 'any',
+    copy_type: 'soft', offer_type: 'sale', price: 60, delivery: 'drive', page_count: 4, has_file: true,
+    drive_url: 'https://drive.google.com/drive/folders/mock-folder', status: 'available',
+    owner: owner(5, 'Kabir A.', 3), created_at: '2026-09-20T08:00:00', updated_at: '2026-09-20T08:00:00',
+    description: 'Drive folder with 20 recorded lectures and the slide decks. The sample PDF shows the first deck.' },
 ]
 
 export const reports = [

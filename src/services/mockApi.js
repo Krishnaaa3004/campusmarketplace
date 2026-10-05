@@ -3,6 +3,7 @@
 // Delete this file once the backend is live; api.js is the only importer.
 
 import * as seed from '../data/sample.js'
+import { DESCRIPTION_MAX, NOTE_MAX, isAllowedDriveUrl } from '../lib/resources.js'
 
 let listings = structuredClone(seed.listings)
 let resources = structuredClone(seed.resources)
@@ -98,32 +99,320 @@ export function uploadImages(id, files) {
   return getListing(id)
 }
 
+// ---------- Resource Hub ----------
+// Same response shapes as campusmarket-backend/app/api/routes/resources.py, including the
+// access matrix. Preview pages are generated placeholders, not real document pages.
+
+const resourceFiles = new Map() // id -> File uploaded in this session
+let resourceAccess = [
+  {
+    id: 1, resource_id: 1, user_id: 2, status: 'pending', note: 'Paid ₹40 on UPI, ref 4471',
+    created_at: new Date(Date.now() - 2 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 2 * 3600e3).toISOString(),
+    decided_at: null,
+    requester: { id: '2', name: 'Rhea M.', avatar_url: null, verified: true, campus: 'Polaris Campus', phone: null, email: 'rhea@polaris.edu' },
+  },
+]
+
+const mockViewer = () => (localStorage.getItem('cm_token') ? seed.currentUser : null)
+const sameId = (a, b) => String(a) === String(b)
+const nowIso = () => new Date().toISOString()
+
+function placeholderPage(r, n, kind) {
+  const lines = Array.from({ length: 16 }, (_, i) =>
+    `<rect x="40" y="${110 + i * 26}" width="${170 + ((i * 37 + n * 23) % 130)}" height="9" rx="4" fill="#C9CBD3"/>`
+  ).join('')
+  const title = n === 1 ? `<text x="40" y="70" font-family="sans-serif" font-size="17" font-weight="700" fill="#15181F">${
+    r.title.replace(/[<&>]/g, '').slice(0, 34)
+  }</text>` : ''
+  const body = kind === 'blurred'
+    ? `<g filter="url(#b)">${title}${lines}</g>`
+    : kind === 'partial'
+      ? `${title}<clipPath id="t"><rect width="360" height="255"/></clipPath><clipPath id="l"><rect y="255" width="360" height="255"/></clipPath><g clip-path="url(#t)">${lines}</g><g clip-path="url(#l)" filter="url(#b)">${lines}</g>`
+      : `${title}${lines}`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="510" viewBox="0 0 360 510"><defs><filter id="b"><feGaussianBlur stdDeviation="8"/></filter></defs><rect width="360" height="510" fill="#fff"/>${body}<text x="320" y="490" font-family="sans-serif" font-size="11" fill="#8A8F9B">${n}</text></svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
+
+function previewKinds(r) {
+  if (!r.has_file) return []
+  const halfBlur = r.copy_type === 'soft' && r.delivery === 'pdf' && r.offer_type === 'sale'
+  if (halfBlur && r.page_count === 1) return ['partial']
+  return ['sharp', ...Array(Math.max(0, Math.min(r.page_count, 4) - 1)).fill('blurred')]
+}
+
+function mockResourceAccess(r, u) {
+  const req = u ? resourceAccess.find((a) => a.resource_id === r.id && sameId(a.user_id, u.id)) : null
+  const request = req ? { ...req, requester: null } : null
+  if (u && sameId(r.owner.id, u.id)) return { full: true, reason: 'owner', can_request: false, request: null }
+  if (u?.role === 'admin') return { full: true, reason: 'admin', can_request: false, request: null }
+  if (!u) return { full: false, reason: 'guest', can_request: false, request: null }
+  if (!u.verified) return { full: false, reason: 'unverified', can_request: false, request: null }
+  if (req?.status === 'approved') return { full: true, reason: 'granted', can_request: false, request }
+  if (r.status === 'closed') return { full: false, reason: 'closed', can_request: false, request }
+  if (r.offer_type === 'free') return { full: true, reason: 'free', can_request: false, request: null }
+  return { full: false, reason: 'locked', can_request: !req || req.status === 'denied', request }
+}
+
+function resourceOut(r, detail = false) {
+  const preview_pages = previewKinds(r).map((kind, i) => ({ url: placeholderPage(r, i + 1, kind), kind }))
+  const { phone, email, ...publicOwner } = r.owner
+  const out = {
+    id: r.id, title: r.title, subject: r.subject, year: r.year, copy_type: r.copy_type,
+    offer_type: r.offer_type, price: r.price, description: r.description || null, status: r.status,
+    delivery: r.delivery || null, pickup_spot: r.pickup_spot || null, has_file: Boolean(r.has_file),
+    page_count: r.page_count ?? null, preview_pages, thumbnail_url: preview_pages[0]?.url || null,
+    created_at: r.created_at, updated_at: r.updated_at,
+    owner: { ...publicOwner, phone: null, email: null },
+    access: null, drive_url: null, file_url: null, upi_id: null, pending_requests: null,
+  }
+  if (!detail) return out
+  const u = mockViewer()
+  const signedIn = Boolean(u?.verified)
+  const access = mockResourceAccess(r, u)
+  out.access = access
+  if (signedIn) out.owner = { ...publicOwner, phone: phone || null, email: email || null }
+  out.upi_id = signedIn ? r.upi_id || null : null
+  if (access.full) {
+    out.drive_url = r.drive_url || null
+    out.file_url = r.has_file ? `/api/resources/${r.id}/file` : null
+  }
+  if (access.reason === 'owner' || access.reason === 'admin') {
+    out.pending_requests = resourceAccess.filter((a) => a.resource_id === r.id && a.status === 'pending').length
+  }
+  return out
+}
+
+function findResource(id) {
+  const r = resources.find((x) => x.id === Number(id))
+  if (!r) throw new Error('Resource not found')
+  return r
+}
+
+function ownResource(id) {
+  const r = findResource(id)
+  const u = mockViewer()
+  if (!u || (!sameId(r.owner.id, u.id) && u.role !== 'admin')) throw new Error("You don't own this resource")
+  return r
+}
+
+async function mockPageCount(file) {
+  try {
+    const text = await file.text()
+    return (text.match(/\/Type\s*\/Page(?!s)/g) || []).length || 1
+  } catch {
+    return 1
+  }
+}
+
+// Mirrors the backend's form rules so mock mode rejects the same input.
+function cleanResourcePayload(p, hasFile) {
+  const d = { ...p }
+  d.title = (d.title || '').trim()
+  d.subject = (d.subject || '').replace(/\s+/g, ' ').trim()
+  if (!d.title || !d.subject) throw new Error('Title and subject are required')
+  if ((d.description || '').length > DESCRIPTION_MAX) throw new Error(`Description must be ${DESCRIPTION_MAX} characters or fewer`)
+  if (d.offer_type === 'sale') {
+    if (!/^\d+$/.test(String(d.price)) || Number(d.price) < 1) throw new Error('A sale needs a whole-rupee price of at least ₹1')
+    d.price = Number(d.price)
+  } else {
+    d.price = 0
+  }
+  if (d.copy_type === 'soft') {
+    d.pickup_spot = null
+    if (d.delivery === 'drive') {
+      if (!isAllowedDriveUrl(d.drive_url || '')) {
+        throw new Error('Drive links must be https and on Google Drive/Docs, OneDrive, SharePoint, Dropbox or Mega')
+      }
+      if (!hasFile) throw new Error('Drive links need a sample PDF so students can preview it')
+    } else {
+      d.delivery = 'pdf'
+      d.drive_url = null
+      if (!hasFile) throw new Error("Upload the PDF you're sharing")
+    }
+  } else {
+    if (!(d.pickup_spot || '').trim()) throw new Error('Hard copies need a pickup spot')
+    d.delivery = null
+    d.drive_url = null
+  }
+  return d
+}
+
 export function listResources(f = {}) {
-  let out = [...resources]
+  const u = mockViewer()
+  let out = f.mine
+    ? resources.filter((r) => u && sameId(r.owner.id, u.id))
+    : resources.filter((r) => r.status === 'available')
   if (f.q) {
     const q = f.q.toLowerCase()
-    out = out.filter((r) => `${r.title} ${r.course_code} ${r.department}`.toLowerCase().includes(q))
+    out = out.filter((r) => `${r.title} ${r.subject} ${r.description || ''}`.toLowerCase().includes(q))
   }
-  if (f.department && f.department !== 'All') out = out.filter((r) => r.department === f.department)
-  if (f.semester && f.semester !== 'All') out = out.filter((r) => r.semester === f.semester)
-  if (f.category && f.category !== 'All') out = out.filter((r) => r.category === f.category)
-  return delay({ items: out, total: out.length })
+  if (f.subject && f.subject !== 'All') out = out.filter((r) => r.subject.toLowerCase() === f.subject.toLowerCase())
+  if (['1', '2', '3', '4'].includes(f.year)) out = out.filter((r) => r.year === f.year || r.year === 'any')
+  if (['soft', 'hard'].includes(f.copy_type)) out = out.filter((r) => r.copy_type === f.copy_type)
+  if (['sale', 'free'].includes(f.offer_type)) out = out.filter((r) => r.offer_type === f.offer_type)
+
+  if (f.sort === 'price_low') out.sort((a, b) => a.price - b.price)
+  else if (f.sort === 'price_high') out.sort((a, b) => b.price - a.price)
+  else out.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+
+  return delay({ items: out.map((r) => resourceOut(r)), total: out.length })
+}
+
+export function resourceFacets() {
+  const seen = new Map()
+  resources.filter((r) => r.status === 'available').forEach((r) => {
+    if (!seen.has(r.subject.toLowerCase())) seen.set(r.subject.toLowerCase(), r.subject)
+  })
+  return delay({ subjects: [...seen.values()].sort((a, b) => a.localeCompare(b)) }, 150)
 }
 
 export function getResource(id) {
-  const found = resources.find((r) => r.id === Number(id))
-  return found ? delay(found) : Promise.reject(new Error('Resource not found'))
+  try {
+    return delay(resourceOut(findResource(id), true))
+  } catch (err) {
+    return Promise.reject(err)
+  }
 }
 
-export function createResource(payload) {
-  const item = { ...payload, id: nextId++, helpful_count: 0, contributor: { ...seed.currentUser, verified: true } }
+export async function createResource(payload, file) {
+  const d = cleanResourcePayload(payload, Boolean(file))
+  const u = seed.currentUser
+  const item = {
+    ...d, id: nextId++, status: 'available', has_file: Boolean(file),
+    page_count: file ? await mockPageCount(file) : null, created_at: nowIso(), updated_at: nowIso(),
+    owner: { id: u.id, name: u.name, campus: u.campus, verified: true, avatar_url: u.avatar_url || null, phone: u.phone || null, email: u.email },
+  }
+  if (file) resourceFiles.set(item.id, file)
   resources.unshift(item)
-  return delay(item)
+  return delay(resourceOut(item, true), 500)
 }
 
-export function markHelpful(id) {
-  resources = resources.map((r) => (r.id === Number(id) ? { ...r, helpful_count: r.helpful_count + 1 } : r))
-  return getResource(id)
+export async function updateResource(id, payload, file, removeFile) {
+  const r = ownResource(id)
+  const keepsFile = r.has_file && !removeFile
+  const d = cleanResourcePayload(payload, Boolean(file) || keepsFile)
+  Object.assign(r, d, { updated_at: nowIso() })
+  if (file) {
+    resourceFiles.set(r.id, file)
+    r.has_file = true
+    r.page_count = await mockPageCount(file)
+  } else if (removeFile) {
+    resourceFiles.delete(r.id)
+    r.has_file = false
+    r.page_count = null
+  }
+  return delay(resourceOut(r, true), 500)
+}
+
+export function deleteResource(id) {
+  try {
+    ownResource(id)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+  resources = resources.filter((r) => r.id !== Number(id))
+  resourceAccess = resourceAccess.filter((a) => a.resource_id !== Number(id))
+  resourceFiles.delete(Number(id))
+  return delay(null)
+}
+
+export function setResourceStatus(id, status) {
+  try {
+    const r = ownResource(id)
+    r.status = status
+    return delay(resourceOut(r, true))
+  } catch (err) {
+    return Promise.reject(err)
+  }
+}
+
+export function requestResourceAccess(id, note) {
+  const u = mockViewer()
+  try {
+    const r = findResource(id)
+    if (!u) throw new Error('Log in to request access')
+    if (sameId(r.owner.id, u.id)) throw new Error('This is your own resource')
+    if (r.offer_type === 'free') throw new Error('This resource is free, no request needed')
+    if (r.status === 'closed') throw new Error('The owner has closed this resource')
+    let req = resourceAccess.find((a) => a.resource_id === r.id && sameId(a.user_id, u.id))
+    if (req?.status === 'approved') throw new Error('You already have access')
+    if (req?.status === 'pending') throw new Error('Your request is already waiting for the owner')
+    const cleanNote = (note || '').replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX) || null
+    if (req) {
+      Object.assign(req, { status: 'pending', note: cleanNote, decided_at: null, updated_at: nowIso() })
+    } else {
+      req = {
+        id: nextId++, resource_id: r.id, user_id: u.id, status: 'pending', note: cleanNote,
+        created_at: nowIso(), updated_at: nowIso(), decided_at: null,
+        requester: { id: String(u.id), name: u.name, avatar_url: u.avatar_url || null, verified: true, campus: u.campus, phone: u.phone || null, email: u.email },
+      }
+      resourceAccess.push(req)
+    }
+    return delay({ ...req, requester: null })
+  } catch (err) {
+    return Promise.reject(err)
+  }
+}
+
+export function listResourceAccess(id) {
+  try {
+    const r = ownResource(id)
+    const order = { pending: 0, approved: 1, denied: 2 }
+    const rows = resourceAccess
+      .filter((a) => a.resource_id === r.id)
+      .sort((a, b) => order[a.status] - order[b.status] || b.updated_at.localeCompare(a.updated_at))
+    return delay(rows)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+}
+
+export function decideResourceAccess(id, requestId, status) {
+  try {
+    const r = ownResource(id)
+    const req = resourceAccess.find((a) => a.id === Number(requestId) && a.resource_id === r.id)
+    if (!req) throw new Error('Request not found')
+    Object.assign(req, { status, decided_at: nowIso(), updated_at: nowIso() })
+    return delay(req)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+}
+
+// A tiny valid one-page PDF so "Open PDF" works in mock mode.
+function mockPdf(title) {
+  const text = `CampusMarket mock file: ${title}`.replace(/[^\x20-\x7E]/g, '-').replace(/[()\\]/g, '')
+  const stream = `BT /F1 16 Tf 60 720 Td (${text}) Tj ET`
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ]
+  let out = '%PDF-1.4\n'
+  const offsets = []
+  objs.forEach((o, i) => {
+    offsets.push(out.length)
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`
+  })
+  const xref = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+  out += offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  return new Blob([out], { type: 'application/pdf' })
+}
+
+export function getResourceFile(id) {
+  try {
+    const r = findResource(id)
+    if (!mockResourceAccess(r, mockViewer()).full) throw new Error("You don't have access to this file yet")
+    if (!r.has_file) throw new Error('This resource has no file')
+    const blob = resourceFiles.get(r.id) || mockPdf(r.title)
+    return new Promise((res) => setTimeout(() => res(blob), 300))
+  } catch (err) {
+    return Promise.reject(err)
+  }
 }
 
 export function createReport(payload) {

@@ -47,6 +47,7 @@ export default function Landing() {
             <div className="flex flex-wrap gap-3">
               <Link to="/marketplace" className="btn-accent">Explore Marketplace</Link>
               <Link to="/sell" className="btn-ghost">Sell an Item</Link>
+              <Link to="/resources/new" className="btn-ghost">Sell Resources</Link>
             </div>
           </div>
 

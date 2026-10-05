@@ -17,7 +17,7 @@ function authHeader() {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-async function request(path, { method = 'GET', body, params, isForm } = {}) {
+async function request(path, { method = 'GET', body, params, isForm, asBlob } = {}) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
@@ -37,6 +37,7 @@ async function request(path, { method = 'GET', body, params, isForm } = {}) {
   })
 
   if (res.status === 204) return null
+  if (asBlob && res.ok) return res.blob()
   const payload = await res.json().catch(() => null)
 
   if (!res.ok) {
@@ -58,6 +59,9 @@ export const http = {
   post: (path, body) => request(path, { method: 'POST', body }),
   postForm: (path, formData) => request(path, { method: 'POST', body: formData, isForm: true }),
   put: (path, body) => request(path, { method: 'PUT', body }),
+  putForm: (path, formData) => request(path, { method: 'PUT', body: formData, isForm: true }),
+  // Binary download with the auth header (e.g. a protected PDF). Errors still come back as JSON.
+  getBlob: (path) => request(path, { asBlob: true }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
   del: (path) => request(path, { method: 'DELETE' }),
 }
