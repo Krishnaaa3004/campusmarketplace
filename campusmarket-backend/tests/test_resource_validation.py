@@ -4,6 +4,7 @@ import pytest
 
 from app.core.pdf_preview import MAX_PDF_BYTES
 from app.models.resource import Resource
+from app.schemas.resource import SUBJECTS
 from conftest import make_pdf
 
 
@@ -14,7 +15,7 @@ def _count(db_session):
 
 
 def _files(file_dirs):
-    return [p for d in file_dirs if d.exists() for p in d.iterdir()]
+    return [p for d in file_dirs if d.exists() for p in d.rglob("*") if p.is_file()]
 
 
 @pytest.mark.parametrize(
@@ -173,18 +174,32 @@ def test_delete_removes_files(client, auth, create, db_session, file_dirs):
 def test_list_filters_and_facets(client, create):
     create({"subject": "DBMS", "year": "2", "offer_type": "free", "price": "0"})
     create({"subject": "Operating Systems", "year": "any", "price": "120"})
-    create({"subject": "dbms", "year": "3", "copy_type": "hard", "delivery": None, "pickup_spot": "Gate"}, pdf=None)
+    create({"subject": "operating systems", "year": "3", "copy_type": "hard", "delivery": None, "pickup_spot": "Gate"}, pdf=None)
 
     def ids(**params):
         return [i["subject"] for i in client.get("/api/resources", params=params).json()["items"]]
 
     assert len(ids()) == 3
-    assert sorted(ids(subject="DBMS")) == ["DBMS", "dbms"]
+    # Subject filter ignores case for custom subjects too.
+    assert sorted(ids(subject="OPERATING SYSTEMS")) == ["Operating Systems", "operating systems"]
     assert sorted(ids(year="2")) == ["DBMS", "Operating Systems"]  # "any" matches every year
-    assert ids(copy_type="hard") == ["dbms"]
+    assert ids(copy_type="hard") == ["operating systems"]
     assert ids(offer_type="free") == ["DBMS"]
-    assert ids(q="operating") == ["Operating Systems"]
+    assert sorted(ids(q="operating")) == ["Operating Systems", "operating systems"]
     prices = [i["price"] for i in client.get("/api/resources", params={"sort": "price_high"}).json()["items"]]
     assert prices == sorted(prices, reverse=True)
 
-    assert client.get("/api/resources/facets").json() == {"subjects": ["DBMS", "Operating Systems"]}
+    subjects = client.get("/api/resources/facets").json()["subjects"]
+    assert subjects[: len(SUBJECTS)] == list(SUBJECTS)
+    # One entry per custom subject, whatever the casing.
+    assert [s.lower() for s in subjects[len(SUBJECTS):]] == ["operating systems"]
+
+
+def test_standard_subjects_are_canonicalised(create, client):
+    assert create({"subject": "  dsa "}).json()["subject"] == "DSA"
+    assert create({"subject": "maths for ai/ml"}).json()["subject"] == "Maths for AI/ML"
+    assert create({"subject": "Compiler Design"}).json()["subject"] == "Compiler Design"
+    # Standard subjects show up even with no resources; custom ones once used.
+    subjects = client.get("/api/resources/facets").json()["subjects"]
+    assert subjects[: len(SUBJECTS)] == list(SUBJECTS)
+    assert subjects[len(SUBJECTS):] == ["Compiler Design"]

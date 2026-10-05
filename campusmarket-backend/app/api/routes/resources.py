@@ -2,25 +2,25 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import pymupdf as fitz
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import ValidationError
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.routes.listings import UPLOAD_DIR
 from app.core.pdf_preview import PdfError, open_pdf, read_limited, render_previews
 from app.core.security import get_current_user, get_optional_user, require_seller
+from app.core.storage import storage
 from app.db.session import get_db
 from app.models.resource import Resource, ResourceAccess
 from app.models.user import User
 from app.schemas.resource import (
+    SUBJECTS,
     AccessDecision,
     AccessOut,
     AccessRequestIn,
@@ -36,12 +36,14 @@ from app.schemas.resource import (
 
 router = APIRouter(prefix="/api/resources", tags=["resources"])
 
-# Original PDFs live OUTSIDE the /uploads static mount and are only ever streamed
-# through GET /api/resources/{id}/file after an access check.
-PRIVATE_DIR = Path(__file__).resolve().parents[3] / "private" / "resources"
-# Rendered preview JPEGs are public: page 1 sharp, the rest blurred server-side.
-PREVIEW_DIR = UPLOAD_DIR / "resource-previews"
-PREVIEW_URL_PREFIX = "uploads/resource-previews/"
+# Original PDFs go to PRIVATE storage and are only ever streamed through
+# GET /api/resources/{id}/file after an access check. Rendered preview JPEGs are public:
+# page 1 sharp, the rest blurred server-side. See app/core/storage.py.
+PREVIEW_PREFIX = "resource-previews/"
+PDF_PREFIX = "resources/"
+
+# Stored files touched by a request, as ("public" | "private", key), for cleanup.
+StoredFiles = list[tuple[str, str]]
 
 
 # ---------- files ----------
@@ -54,7 +56,7 @@ class _Pdf:
 
 
 def _read_pdf(file: UploadFile | None) -> _Pdf | None:
-    """Validate an uploaded PDF fully before anything touches the DB or disk."""
+    """Validate an uploaded PDF fully before anything touches the DB or storage."""
     if file is None or not file.filename:
         return None
     try:
@@ -70,48 +72,47 @@ def _wants_half_blur(r: Resource) -> bool:
     return r.copy_type == "soft" and r.delivery == "pdf" and r.offer_type == "sale"
 
 
-def _write_previews(r: Resource, doc: fitz.Document, written: list[Path]) -> None:
-    PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+def _write_previews(r: Resource, doc: fitz.Document, written: StoredFiles) -> None:
     token = uuid.uuid4().hex
     pages = []
     for i, img in enumerate(render_previews(doc, half_blur_single_page=_wants_half_blur(r)), start=1):
-        name = f"{token}-p{i}.jpg"
-        dest = PREVIEW_DIR / name
-        dest.write_bytes(img.data)
-        written.append(dest)
-        pages.append({"name": name, "kind": img.kind})
+        key = f"{PREVIEW_PREFIX}{token}-p{i}.jpg"
+        storage.put_public(key, img.data, "image/jpeg")
+        written.append(("public", key))
+        pages.append({"key": key, "kind": img.kind})
     r.preview_pages = pages
     r.page_count = doc.page_count
 
 
-def _store_pdf(r: Resource, pdf: _Pdf, written: list[Path]) -> None:
-    PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.pdf"
-    dest = PRIVATE_DIR / name
-    dest.write_bytes(pdf.data)
-    written.append(dest)
-    r.file_name = name
+def _store_pdf(r: Resource, pdf: _Pdf, written: StoredFiles) -> None:
+    key = f"{PDF_PREFIX}{uuid.uuid4().hex}.pdf"
+    storage.put_private(key, pdf.data, "application/pdf")
+    written.append(("private", key))
+    r.file_name = key
     _write_previews(r, pdf.doc, written)
 
 
-def _private_path(r: Resource) -> Path | None:
+def _pdf_key(r: Resource) -> str | None:
     if not r.file_name:
         return None
-    path = PRIVATE_DIR / Path(r.file_name).name
-    return path if path.parent == PRIVATE_DIR else None
+    # Rows saved before cloud storage hold a bare "<uuid>.pdf".
+    return r.file_name if "/" in r.file_name else PDF_PREFIX + r.file_name
 
 
-def _preview_paths(r: Resource) -> list[Path]:
-    return [PREVIEW_DIR / Path(p["name"]).name for p in (r.preview_pages or [])]
+def _preview_key(page: dict) -> str:
+    return page.get("key") or PREVIEW_PREFIX + page["name"]
 
 
-def _remove_files(paths: list[Path]) -> None:
-    for p in paths:
-        try:
-            if p and p.is_file():
-                p.unlink()
-        except OSError:
-            pass
+def _resource_files(r: Resource) -> StoredFiles:
+    files: StoredFiles = [("public", _preview_key(p)) for p in (r.preview_pages or [])]
+    if key := _pdf_key(r):
+        files.append(("private", key))
+    return files
+
+
+def _remove_files(files: StoredFiles) -> None:
+    storage.delete_public([k for kind, k in files if kind == "public"])
+    storage.delete_private([k for kind, k in files if kind == "private"])
 
 
 def _clear_file(r: Resource) -> None:
@@ -186,7 +187,7 @@ def _resource_out(
     r: Resource, request: Request, viewer: User | None = None, db: Session | None = None, detail: bool = False
 ) -> ResourceOut:
     base = str(request.base_url)
-    pages = [PreviewPage(url=base + PREVIEW_URL_PREFIX + p["name"], kind=p["kind"]) for p in (r.preview_pages or [])]
+    pages = [PreviewPage(url=storage.public_url(_preview_key(p), base), kind=p["kind"]) for p in (r.preview_pages or [])]
     out = ResourceOut(
         id=r.id,
         title=r.title,
@@ -327,12 +328,15 @@ def list_resources(
 
 @router.get("/facets", response_model=FacetsOut)
 def resource_facets(db: Session = Depends(get_db)):
-    """Distinct subjects, for the filter dropdown and the form's autocomplete."""
+    """Subjects for the filter dropdown and the form's autocomplete: the standard list first,
+    then any other subjects that available resources use."""
     rows = db.query(Resource.subject).filter(Resource.status == "available").distinct().all()
-    seen: dict[str, str] = {}
+    standard = {s.lower() for s in SUBJECTS}
+    extra: dict[str, str] = {}
     for (subject,) in rows:
-        seen.setdefault(subject.lower(), subject)
-    return FacetsOut(subjects=sorted(seen.values(), key=str.lower))
+        if subject.lower() not in standard:
+            extra.setdefault(subject.lower(), subject)
+    return FacetsOut(subjects=[*SUBJECTS, *sorted(extra.values(), key=str.lower)])
 
 
 @router.get("/{resource_id}", response_model=ResourceOut)
@@ -359,7 +363,7 @@ def create_resource(
     _check_file_rules(fields, has_file=pdf is not None)
 
     r = Resource(**fields.model_dump(), owner_id=user.id, status="available", preview_pages=[])
-    written: list[Path] = []
+    written: StoredFiles = []
     try:
         if pdf:
             _store_pdf(r, pdf, written)
@@ -391,25 +395,25 @@ def update_resource(
     _check_file_rules(fields, has_file=pdf is not None or keeps_file)
 
     had_partial = any(p["kind"] == "partial" for p in (r.preview_pages or []))
-    written: list[Path] = []
-    stale: list[Path] = []
+    written: StoredFiles = []
+    stale: StoredFiles = []
     try:
         for key, value in fields.model_dump().items():
             setattr(r, key, value)
 
         if pdf:
-            stale = [p for p in [_private_path(r), *_preview_paths(r)] if p]
+            stale = _resource_files(r)
             _store_pdf(r, pdf, written)
         elif remove_file and r.file_name:
-            stale = [p for p in [_private_path(r), *_preview_paths(r)] if p]
+            stale = _resource_files(r)
             _clear_file(r)
         elif r.file_name and r.page_count == 1 and had_partial != _wants_half_blur(r):
             # Offer or delivery changed on a one-page PDF: re-render so the preview matches.
-            path = _private_path(r)
-            if path and path.is_file():
-                doc = open_pdf(path.read_bytes())
+            data = storage.get_private(_pdf_key(r))
+            if data:
+                doc = open_pdf(data)
                 try:
-                    stale = _preview_paths(r)
+                    stale = [f for f in _resource_files(r) if f[0] == "public"]
                     _write_previews(r, doc, written)
                 finally:
                     doc.close()
@@ -448,7 +452,7 @@ def delete_resource(
     user: User = Depends(get_current_user),
 ):
     r = _get_owned_resource(resource_id, db, user, allow_admin=True)
-    files = [p for p in [_private_path(r), *_preview_paths(r)] if p]
+    files = _resource_files(r)
     db.delete(r)
     db.commit()
     _remove_files(files)
@@ -551,14 +555,17 @@ def download_resource_file(
     r = _get_resource(resource_id, db)
     if not _access(r, user, db).full:
         raise HTTPException(status_code=403, detail="You don't have access to this file yet")
-    path = _private_path(r)
-    if not path or not path.is_file():
+    key = _pdf_key(r)
+    data = storage.get_private(key) if key else None
+    if not data:
         raise HTTPException(status_code=404, detail="This resource has no file")
     slug = re.sub(r"[^A-Za-z0-9]+", "-", r.title).strip("-")[:60] or "resource"
-    return FileResponse(
-        path,
+    return Response(
+        content=data,
         media_type="application/pdf",
-        filename=f"{slug}.pdf",
-        content_disposition_type="inline",
-        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        headers={
+            "Content-Disposition": f'inline; filename="{slug}.pdf"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )

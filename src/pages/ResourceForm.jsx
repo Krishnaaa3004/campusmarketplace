@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { resourcesApi } from '../services/api.js'
-import { useApi } from '../hooks/useApi.js'
 import { useToast } from '../hooks/useToast.jsx'
 import { useAuth } from '../hooks/useAuth.jsx'
 import {
-  DESCRIPTION_MAX, MAX_PDF_MB, YEARS, checkPdfFile, isAllowedDriveUrl,
+  DESCRIPTION_MAX, MAX_PDF_MB, SUBJECTS, YEARS, canonicalSubject, checkPdfFile, isAllowedDriveUrl,
 } from '../lib/resources.js'
+
+const OTHER = '__other__'
 
 const BLANK = {
   title: '', subject: '', year: 'any', copy_type: 'soft', offer_type: 'sale', price: '',
@@ -53,7 +54,8 @@ export default function ResourceForm() {
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [loadingResource, setLoadingResource] = useState(isEdit)
-  const { data: facets } = useApi(() => resourcesApi.facets(), [])
+  // Subject is a dropdown of SUBJECTS plus "Other", which reveals a text box.
+  const [otherSubject, setOtherSubject] = useState(false)
 
   useEffect(() => {
     if (!isEdit) return
@@ -68,11 +70,12 @@ export default function ResourceForm() {
           return
         }
         setForm({
-          title: r.title, subject: r.subject, year: r.year, copy_type: r.copy_type, offer_type: r.offer_type,
+          title: r.title, subject: canonicalSubject(r.subject), year: r.year, copy_type: r.copy_type, offer_type: r.offer_type,
           price: r.offer_type === 'sale' ? String(r.price) : '', description: r.description || '',
           delivery: r.delivery || 'pdf', drive_url: r.drive_url || '', pickup_spot: r.pickup_spot || '',
           upi_id: r.upi_id || '',
         })
+        setOtherSubject(!SUBJECTS.includes(canonicalSubject(r.subject)))
         setExisting({ has_file: r.has_file, page_count: r.page_count })
         setLoadingResource(false)
       })
@@ -111,7 +114,7 @@ export default function ResourceForm() {
   function validate() {
     const next = {}
     if (!form.title.trim()) next.title = 'Give it a title students would search for.'
-    if (!form.subject.trim()) next.subject = 'Which subject is this for?'
+    if (!form.subject.trim()) next.subject = otherSubject ? 'Type the subject name.' : 'Pick a subject.'
     if (form.offer_type === 'sale' && !/^\d+$/.test(String(form.price).trim())) {
       next.price = 'Enter a whole-rupee price, e.g. 50.'
     } else if (form.offer_type === 'sale' && Number(form.price) < 1) {
@@ -137,7 +140,7 @@ export default function ResourceForm() {
     try {
       const payload = {
         title: form.title.trim(),
-        subject: form.subject.trim(),
+        subject: canonicalSubject(form.subject),
         year: form.year,
         copy_type: form.copy_type,
         offer_type: form.offer_type,
@@ -192,10 +195,31 @@ export default function ResourceForm() {
         <div className="mb-4 grid gap-4 sm:grid-cols-2">
           <div>
             <label className="field-label" htmlFor="subject">Subject</label>
-            <input id="subject" className="field-input" list="subject-options" maxLength={60} value={form.subject} onChange={set('subject')} placeholder="e.g. DBMS" />
-            <datalist id="subject-options">
-              {(facets?.subjects || []).map((s) => <option key={s} value={s} />)}
-            </datalist>
+            <select
+              id="subject"
+              className="field-input"
+              value={otherSubject ? OTHER : form.subject}
+              onChange={(e) => {
+                const other = e.target.value === OTHER
+                setOtherSubject(other)
+                setForm((f) => ({ ...f, subject: other ? '' : e.target.value }))
+              }}
+            >
+              <option value="" disabled>Select a subject</option>
+              {SUBJECTS.map((s) => <option key={s} value={s}>{s}</option>)}
+              <option value={OTHER}>Other…</option>
+            </select>
+            {otherSubject && (
+              <input
+                aria-label="Subject name"
+                className="field-input mt-2"
+                maxLength={60}
+                value={form.subject}
+                onChange={set('subject')}
+                placeholder="Type the subject name"
+                autoFocus
+              />
+            )}
             <FieldError msg={errors.subject} />
           </div>
           <div>

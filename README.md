@@ -63,6 +63,7 @@ Backend `.env`:
 | `ALLOWED_EMAIL_DOMAINS` | JSON list of college domains allowed to sign up, e.g. `["medhaviskillsuniversity.edu.in"]` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | Gmail SMTP for OTP emails (use an app password) |
 | `CORS_ORIGINS` | e.g. `["http://localhost:5173"]` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Stores uploads in Supabase Storage so every machine sees the same photos and PDFs. Without it, files stay on the machine that received them. See the [backend README](campusmarket-backend/README.md#files-and-storage). |
 
 > **After pulling new code, run `uv sync` and `uv run alembic upgrade head`.** If the
 > database is behind the code, endpoints return 500, and the browser shows that as
@@ -91,10 +92,10 @@ copy type (soft / hard), a description of up to 500 characters, and a status
 **Previews are made on the server.** When a PDF is uploaded, the backend checks it: it must
 start with `%PDF`, be unencrypted and be under 15 MB. It then renders **page 1 sharp** and
 **pages 2–4 as small, heavily Gaussian-blurred JPEGs**. A single-page PDF sold through
-hosted delivery keeps only its top half sharp. Previews are public files in
-`uploads/resource-previews/`. The original PDF is stored in `campusmarket-backend/private/`
-(not publicly served) and is only streamed through `GET /api/resources/{id}/file` after an
-access check. The frontend fetches it as a blob with the auth header.
+hosted delivery keeps only its top half sharp. Previews are public files. The original PDF
+goes to private storage (a private Supabase bucket, or `private/` on local disk) and is only
+streamed through `GET /api/resources/{id}/file` after an access check. The frontend fetches
+it as a blob with the auth header.
 
 **Who gets full access:**
 
@@ -131,12 +132,12 @@ campusmarket/
       main.py               FastAPI app, CORS, /uploads static mount, /health
       api/routes/           auth.py, listings.py, requests.py, resources.py
       core/                 config, security (JWT, get_current_user, get_optional_user, require_seller),
-                            email (OTP), pdf_preview (validation + preview rendering)
+                            email (OTP), pdf_preview (validation + previews), storage (Supabase / local)
       models/  schemas/     SQLAlchemy models and Pydantic schemas
     alembic/versions/       migrations
     tests/                  pytest suite for the Resource Hub
-    uploads/                public files: listing photos, avatars, resource previews (gitignored)
-    private/                original resource PDFs, never served directly (gitignored)
+    scripts/                migrate_uploads_to_storage.py (one-time move of local files to Supabase)
+    uploads/  private/      local-disk storage when Supabase Storage isn't configured (gitignored)
 ```
 
 ## API

@@ -8,6 +8,26 @@ export const YEARS = [
   { value: 'any', label: 'Any year' },
 ]
 
+// Standard subjects, always offered in the filter and the form. Mirrors SUBJECTS in
+// campusmarket-backend/app/schemas/resource.py. Other subjects can still be typed.
+export const SUBJECTS = [
+  'Maths for AI/ML',
+  'GenAI',
+  'GoLang',
+  'Data Science',
+  'Full Stack Web Development',
+  'DBMS',
+  'Frontend Development',
+  'DSA',
+  'Machine Learning',
+]
+
+// "dsa" -> "DSA"; anything not in the list is kept as typed (whitespace tidied).
+export function canonicalSubject(value = '') {
+  const clean = value.replace(/\s+/g, ' ').trim()
+  return SUBJECTS.find((s) => s.toLowerCase() === clean.toLowerCase()) || clean
+}
+
 export const DESCRIPTION_MAX = 500
 export const NOTE_MAX = 200
 export const MAX_PDF_MB = 15

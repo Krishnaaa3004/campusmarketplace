@@ -6,6 +6,21 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 YEARS = ("1", "2", "3", "4", "any")
+
+# Standard subjects: always offered in the filter and the form's suggestions, in this order.
+# Other subjects can still be typed; they appear in the filter once a resource uses them.
+SUBJECTS = (
+    "Maths for AI/ML",
+    "GenAI",
+    "GoLang",
+    "Data Science",
+    "Full Stack Web Development",
+    "DBMS",
+    "Frontend Development",
+    "DSA",
+    "Machine Learning",
+)
+_SUBJECTS_BY_LOWER = {s.lower(): s for s in SUBJECTS}
 DESCRIPTION_MAX = 500
 NOTE_MAX = 200
 
@@ -61,6 +76,12 @@ class ResourceIn(BaseModel):
         if not value:
             raise ValueError("This field is required")
         return value
+
+    @field_validator("subject")
+    @classmethod
+    def canonical_subject(cls, value: str) -> str:
+        # "dsa" -> "DSA", so the filter doesn't split one subject into several spellings.
+        return _SUBJECTS_BY_LOWER.get(value.lower(), value)
 
     @field_validator("pickup_spot", "upi_id", "drive_url")
     @classmethod

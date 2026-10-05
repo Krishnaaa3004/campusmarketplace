@@ -1,4 +1,3 @@
-import shutil
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,7 +14,8 @@ from app.core.security import (
     hash_otp,
     verify_otp,
 )
-from app.api.routes.listings import UPLOAD_DIR, _delete_upload_files
+from app.api.routes.listings import _delete_upload_files
+from app.core.storage import storage
 from app.db.session import get_db  # <-- point this at your existing db session dependency
 from app.models.otp import OTPCode
 from app.models.user import User
@@ -164,12 +164,11 @@ def upload_avatar(
     if size > MAX_AVATAR_BYTES:
         raise HTTPException(status_code=400, detail="Profile picture must be under 5 MB")
 
-    filename = f"avatar-{uuid.uuid4().hex}{ext}"
-    with (UPLOAD_DIR / filename).open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+    key = f"avatars/{uuid.uuid4().hex}{ext}"
+    storage.put_public(key, file.file.read(), file.content_type)
 
     old = user.avatar_url
-    user.avatar_url = str(request.base_url) + f"uploads/{filename}"
+    user.avatar_url = storage.public_url(key, str(request.base_url))
     db.commit()
     db.refresh(user)
     if old:

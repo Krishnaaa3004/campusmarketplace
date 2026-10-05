@@ -76,11 +76,12 @@ def test_upload_writes_public_previews_and_private_pdf(client, create, file_dirs
     assert body["thumbnail_url"] == body["preview_pages"][0]["url"]
     assert all("/uploads/resource-previews/" in p["url"] for p in body["preview_pages"])
 
-    # Original lives only in the private dir, never under uploads/.
-    stored = list(private.iterdir())
+    # Original lives only in private storage, never under uploads/.
+    stored = [p for p in private.rglob("*") if p.is_file()]
     assert len(stored) == 1 and stored[0].read_bytes() == pdf
-    assert len(list(previews_dir.iterdir())) == 4
-    assert not any(p.suffix == ".pdf" for p in previews_dir.iterdir())
+    public = [p for p in previews_dir.parent.rglob("*") if p.is_file()]
+    assert len(public) == 4
+    assert not any(p.suffix == ".pdf" for p in public)
 
 
 def test_single_page_sale_upload_uses_partial_preview_and_rerenders_on_offer_change(client, auth, create):

@@ -3,7 +3,7 @@
 // Delete this file once the backend is live; api.js is the only importer.
 
 import * as seed from '../data/sample.js'
-import { DESCRIPTION_MAX, NOTE_MAX, isAllowedDriveUrl } from '../lib/resources.js'
+import { DESCRIPTION_MAX, NOTE_MAX, SUBJECTS, canonicalSubject, isAllowedDriveUrl } from '../lib/resources.js'
 
 let listings = structuredClone(seed.listings)
 let resources = structuredClone(seed.resources)
@@ -208,7 +208,7 @@ async function mockPageCount(file) {
 function cleanResourcePayload(p, hasFile) {
   const d = { ...p }
   d.title = (d.title || '').trim()
-  d.subject = (d.subject || '').replace(/\s+/g, ' ').trim()
+  d.subject = canonicalSubject(d.subject || '')
   if (!d.title || !d.subject) throw new Error('Title and subject are required')
   if ((d.description || '').length > DESCRIPTION_MAX) throw new Error(`Description must be ${DESCRIPTION_MAX} characters or fewer`)
   if (d.offer_type === 'sale') {
@@ -259,11 +259,13 @@ export function listResources(f = {}) {
 }
 
 export function resourceFacets() {
-  const seen = new Map()
+  const standard = new Set(SUBJECTS.map((s) => s.toLowerCase()))
+  const extra = new Map()
   resources.filter((r) => r.status === 'available').forEach((r) => {
-    if (!seen.has(r.subject.toLowerCase())) seen.set(r.subject.toLowerCase(), r.subject)
+    const key = r.subject.toLowerCase()
+    if (!standard.has(key) && !extra.has(key)) extra.set(key, r.subject)
   })
-  return delay({ subjects: [...seen.values()].sort((a, b) => a.localeCompare(b)) }, 150)
+  return delay({ subjects: [...SUBJECTS, ...[...extra.values()].sort((a, b) => a.localeCompare(b))] }, 150)
 }
 
 export function getResource(id) {

@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str
     SMTP_FROM: str
 
+    # --- File storage (listing photos, avatars, resource previews + PDFs) ---
+    # "auto" uses Supabase Storage when SUPABASE_SERVICE_ROLE_KEY is set, otherwise local disk.
+    STORAGE_BACKEND: str = "auto"  # auto | supabase | local
+    SUPABASE_URL: str | None = None  # derived from DATABASE_URL when blank
+    SUPABASE_SERVICE_ROLE_KEY: str | None = None  # secret, backend only
+    SUPABASE_PUBLIC_BUCKET: str = "campusmarket-public"
+    SUPABASE_PRIVATE_BUCKET: str = "campusmarket-private"
+
     class Config:
         env_file = ".env"
 

@@ -1,14 +1,13 @@
 import json
-import shutil
 import uuid
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.security import require_seller
+from app.core.storage import delete_public_urls, storage
 from app.db.session import get_db
 from app.models.listing import Listing
 from app.models.user import User
@@ -31,17 +30,8 @@ MAX_IMAGES = 3
 
 
 def _delete_upload_files(urls: list[str]) -> None:
-    """Best-effort removal of uploaded files. Only touches files directly inside UPLOAD_DIR."""
-    for url in urls:
-        name = Path(urlparse(url).path).name
-        if not name:
-            continue
-        target = UPLOAD_DIR / name
-        try:
-            if target.parent == UPLOAD_DIR and target.is_file():
-                target.unlink()
-        except OSError:
-            pass
+    """Best-effort removal of uploaded public files (Supabase or legacy local /uploads/ URLs)."""
+    delete_public_urls(urls)
 
 
 def _get_owned_listing(listing_id: int, db: Session, user: User) -> Listing:
@@ -233,12 +223,10 @@ def upload_images(
     for f in files[:room]:
         if f.content_type and not f.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Only image files are allowed")
-        ext = Path(f.filename or "").suffix or ".jpg"
-        filename = f"{uuid.uuid4().hex}{ext}"
-        dest = UPLOAD_DIR / filename
-        with dest.open("wb") as out:
-            shutil.copyfileobj(f.file, out)
-        urls.append(str(request.base_url) + f"uploads/{filename}")
+        ext = (Path(f.filename or "").suffix or ".jpg").lower()
+        key = f"listings/{uuid.uuid4().hex}{ext}"
+        storage.put_public(key, f.file.read(), f.content_type or "image/jpeg")
+        urls.append(storage.public_url(key, str(request.base_url)))
 
     listing.images = [*(listing.images or []), *urls]
     db.commit()

@@ -25,6 +25,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.routes import resources as resources_routes
+from app.core import storage as storage_module
+from app.core.storage import LocalStorage
 from app.core.security import create_access_token
 from app.db.base import Base
 from app.db.session import get_db
@@ -55,11 +57,11 @@ def db_session():
 
 @pytest.fixture
 def file_dirs(tmp_path, monkeypatch):
-    private = tmp_path / "private"
-    previews = tmp_path / "uploads" / "resource-previews"
-    monkeypatch.setattr(resources_routes, "PRIVATE_DIR", private)
-    monkeypatch.setattr(resources_routes, "PREVIEW_DIR", previews)
-    return private, previews
+    """Local storage rooted in a temp dir. Returns (private root, public previews dir)."""
+    local = LocalStorage(tmp_path / "uploads", tmp_path / "private")
+    monkeypatch.setattr(resources_routes, "storage", local)
+    monkeypatch.setattr(storage_module, "storage", local)
+    return tmp_path / "private", tmp_path / "uploads" / "resource-previews"
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ import SearchBar from '../components/SearchBar.jsx'
 import { Select } from '../components/FilterBar.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import { formatPrice } from '../lib/format.js'
-import { YEARS, deliveryLabel, yearLabel } from '../lib/resources.js'
+import { SUBJECTS, YEARS, deliveryLabel, yearLabel } from '../lib/resources.js'
 
 const SORTS = [
   { value: 'newest', label: 'Newest first' },
@@ -34,7 +34,7 @@ export default function Resources() {
     [debouncedQ, subject, year, copyType, offerType, sort, mine]
   )
   const items = data?.items || []
-  const subjects = facets?.subjects || []
+  const subjects = facets?.subjects || SUBJECTS
   const filtered = Boolean(debouncedQ) || subject !== 'All' || year !== 'any' || copyType !== 'any' || offerType !== 'any'
 
   return (
