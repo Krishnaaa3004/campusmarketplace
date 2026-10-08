@@ -1,4 +1,4 @@
-# CampusMarket
+# CampusMarke
 
 A marketplace for verified students: buy, sell, rent and give away campus essentials, and
 trade study material in the Resource Hub. Only students with an approved college email can
