@@ -3,27 +3,41 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { authApi } from '../services/api.js'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { trackEvent } from '../lib/analytics.js'
+import { PASSWORD_HINT, newPasswordErrors } from '../lib/password.js'
+import PasswordInput from '../components/PasswordInput.jsx'
 
 const ACCOUNT_TYPES = [
   { value: 'buyer', emoji: '🛍️', title: 'Buyer', body: 'Browse and buy from students on your campus.' },
   { value: 'seller', emoji: '🏷️', title: 'Seller', body: 'List your own items, and buy too.' },
 ]
 
+function FieldError({ msg }) {
+  return msg ? <p className="mt-1.5 text-[13px] text-coral">{msg}</p> : null
+}
+
+// Step 1: account type, college email and password. Step 2: the emailed code proves the
+// email; only then is the account created with that password.
 export default function Signup() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login } = useAuth()
-  const [step, setStep] = useState('email') // 'email' | 'otp'
+  const { signupVerify } = useAuth()
+  const [step, setStep] = useState('details') // 'details' | 'otp'
   const [email, setEmail] = useState(location.state?.email || '')
   const [accountType, setAccountType] = useState('buyer')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   async function sendCode(e) {
     e.preventDefault()
-    setBusy(true)
     setError('')
+    const problems = newPasswordErrors(password, confirm)
+    setFieldErrors(problems)
+    if (Object.keys(problems).length) return
+    setBusy(true)
     try {
       await authApi.signup(email, accountType)
       setStep('otp')
@@ -39,8 +53,8 @@ export default function Signup() {
     setBusy(true)
     setError('')
     try {
-      await login(email, otp)
-      trackEvent('sign_up', { method: 'email_code', account_type: accountType })
+      await signupVerify({ email, otp, account_type: accountType, password, confirm_password: confirm })
+      trackEvent('sign_up', { method: 'password', account_type: accountType })
       navigate('/onboarding')
     } catch (err) {
       setError(err.message)
@@ -51,12 +65,12 @@ export default function Signup() {
 
   return (
     <div className="mx-auto my-14 w-full max-w-[420px] rounded-slab border border-line bg-paper p-8 md:p-10">
-      {step === 'email' ? (
+      {step === 'details' ? (
         <>
           <h2 className="mb-2 text-[26px] font-bold">Join your campus</h2>
           <p className="mb-6 text-sm text-ink-soft">Sign up with your college email to get verified.</p>
 
-          <form onSubmit={sendCode}>
+          <form onSubmit={sendCode} noValidate>
             <fieldset className="mb-5">
               <legend className="field-label">I want to join as a</legend>
               <div className="grid grid-cols-2 gap-3">
@@ -87,10 +101,23 @@ export default function Signup() {
             </fieldset>
 
             <label className="field-label" htmlFor="email">College email</label>
-            <input id="email" type="email" required className="field-input mb-4" value={email}
+            <input id="email" type="email" required autoComplete="email" className="field-input mb-4" value={email}
               onChange={(e) => setEmail(e.target.value)} placeholder="you@medhaviskillsuniversity.edu.in" />
-            {error && <p className="mb-3 text-[13px] text-coral">{error}</p>}
-            <button className="btn-primary w-full" disabled={busy}>
+
+            <label className="field-label" htmlFor="password">Create password</label>
+            <PasswordInput id="password" required autoComplete="new-password" value={password}
+              onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" />
+            {fieldErrors.password
+              ? <FieldError msg={fieldErrors.password} />
+              : <p className="mt-1.5 text-[12.5px] text-ink-faint">{PASSWORD_HINT}</p>}
+
+            <label className="field-label mt-4" htmlFor="confirm">Confirm password</label>
+            <PasswordInput id="confirm" required autoComplete="new-password" value={confirm}
+              onChange={(e) => setConfirm(e.target.value)} placeholder="Type it again" />
+            <FieldError msg={fieldErrors.confirm} />
+
+            {error && <p className="mt-4 text-[13px] text-coral">{error}</p>}
+            <button className="btn-primary mt-5 w-full" disabled={busy}>
               {busy ? 'Sending…' : 'Send verification code'}
             </button>
           </form>
@@ -98,21 +125,21 @@ export default function Signup() {
       ) : (
         <>
           <h2 className="mb-2 text-[26px] font-bold">Check your inbox</h2>
-          <p className="mb-6 text-sm text-ink-soft">Enter the 6-digit code we sent to {email}.</p>
+          <p className="mb-6 text-sm text-ink-soft">Enter the 6-digit code we sent to {email}. Your account is created once it's verified.</p>
 
           <form onSubmit={verifyCode}>
             <label className="field-label" htmlFor="otp">Verification code</label>
-            <input id="otp" type="text" inputMode="numeric" maxLength={6} required
+            <input id="otp" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} required
               className="field-input mb-4" value={otp}
               onChange={(e) => setOtp(e.target.value)} placeholder="123456" />
             {error && <p className="mb-3 text-[13px] text-coral">{error}</p>}
             <button className="btn-primary w-full" disabled={busy}>
-              {busy ? 'Verifying…' : 'Verify & continue'}
+              {busy ? 'Verifying…' : 'Verify & create account'}
             </button>
           </form>
 
-          <button className="btn-ghost mt-3 w-full" onClick={() => setStep('email')}>
-            Use a different email
+          <button className="btn-ghost mt-3 w-full" onClick={() => { setStep('details'); setOtp(''); setError('') }}>
+            Change email or password
           </button>
         </>
       )}
@@ -122,7 +149,7 @@ export default function Signup() {
       </p>
 
       <p className="mt-5 text-center text-[13.5px] text-ink-soft">
-        Already verified? <Link to="/login" className="font-semibold text-brand">Log in</Link>
+        Already have an account? <Link to="/login" className="font-semibold text-brand">Log in</Link>
       </p>
     </div>
   )

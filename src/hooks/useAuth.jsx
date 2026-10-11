@@ -18,6 +18,12 @@ export function AuthProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
+  function startSession(res) {
+    if (res?.token) localStorage.setItem('cm_token', res.token)
+    setUser(res.user)
+    return res.user
+  }
+
   const value = {
     user,
     loading,
@@ -28,11 +34,24 @@ export function AuthProvider({ children }) {
     isOwner: Boolean(user?.is_owner),
     // Sellers can buy and sell; buyers can only buy. Admins can do everything.
     isSeller: user?.account_type === 'seller' || user?.role === 'admin',
-    async login(email, otp) {
-      const res = await authApi.login(email, otp)
-      if (res?.token) localStorage.setItem('cm_token', res.token)
-      setUser(res.user)
-      return res.user
+    // Accounts from before passwords existed must create one before doing anything else.
+    needsPassword: Boolean(user && user.has_password === false),
+    async login(email, password) {
+      return startSession(await authApi.login(email, password))
+    },
+    async loginWithCode(email, otp) {
+      return startSession(await authApi.loginWithCode(email, otp))
+    },
+    async signupVerify(payload) {
+      return startSession(await authApi.signupVerify(payload))
+    },
+    async resetPassword(payload) {
+      return startSession(await authApi.resetPassword(payload))
+    },
+    async setPassword(password, confirmPassword) {
+      const updated = await authApi.setPassword(password, confirmPassword)
+      setUser(updated)
+      return updated
     },
     async completeProfile(payload) {
       const updated = await authApi.completeProfile(payload)

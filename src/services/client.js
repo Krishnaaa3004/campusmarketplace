@@ -48,7 +48,7 @@ async function request(path, { method = 'GET', body, params, isForm, asBlob } = 
         ? detail
         : Array.isArray(detail)
           ? detail.map((d) => String(d.msg).replace(/^Value error, /, '')).join(', ')
-          : 'Something went wrong. Try again.'
+          : detail?.message || 'Something went wrong. Try again.' // { code, message } errors, e.g. password_not_set
     throw new ApiError(message, res.status, detail)
   }
   return payload

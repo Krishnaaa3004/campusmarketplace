@@ -526,27 +526,155 @@ export function setReportStatus(id, status) {
   return delay(null)
 }
 
-export function signup(email, accountType = 'buyer') {
-  const domain = email.split('@')[1]
-  const campus = campuses.find((c) => c.email_domain === domain && c.is_active)
-  if (!campus) {
-    return Promise.reject(new Error('That domain is not an approved campus yet. Ask your admin to add it.'))
+// ---------- Auth (mirrors /api/auth: password login, code fallback, set/reset password) ----------
+// aashi@polaris.edu / campus123 is the main sample account. legacy@polaris.edu has no password.
+// Codes: any 6 digits work in mock mode.
+
+function mockError(message, status, detail) {
+  return Object.assign(new Error(message), { status, detail: detail ?? message })
+}
+
+const mockAccounts = {
+  [seed.currentUser.email]: { password: seed.MOCK_PASSWORD, profile: { ...seed.currentUser } },
+  [seed.legacyUser.email]: { password: null, profile: { ...seed.legacyUser } },
+}
+
+function checkCampusEmail(email) {
+  const domain = String(email).split('@')[1]
+  if (!campuses.some((c) => c.email_domain === domain && c.is_active)) {
+    throw mockError('That domain is not an approved campus yet. Ask your admin to add it.', 400)
   }
-  seed.currentUser.account_type = accountType
-  return delay({ ok: true, message: 'Magic link sent. Check your college inbox.' })
+}
+
+function checkNewPassword(password, confirm) {
+  if (!password || password.length < 8) throw mockError('Password must be at least 8 characters', 422)
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    throw mockError('Password must include at least one letter and one number', 422)
+  }
+  if (password !== confirm) throw mockError("Passwords don't match", 422)
+}
+
+function checkCode(otp) {
+  if (!/^\d{6}$/.test(String(otp || '').trim())) throw mockError('Incorrect code', 400)
+}
+
+// seed.currentUser is the "logged-in" user every other mock function reads, so switch it in place.
+function becomeAccount(email) {
+  syncCurrentAccount() // keep profile edits made as the previous account
+  const acc = mockAccounts[email]
+  Object.keys(seed.currentUser).forEach((k) => delete seed.currentUser[k])
+  Object.assign(seed.currentUser, acc.profile, { has_password: Boolean(acc.password) })
+  const token = `mock-token:${email}`
+  localStorage.setItem('cm_token', token)
+  return { token, user: seed.currentUser }
+}
+
+function syncCurrentAccount() {
+  const acc = seed.currentUser.email && mockAccounts[seed.currentUser.email]
+  if (acc) acc.profile = { ...seed.currentUser }
+}
+
+export function signup(email, accountType = 'buyer') {
+  try {
+    checkCampusEmail(email)
+    if (mockAccounts[email]) throw mockError('An account with this email already exists. Log in instead.', 409)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+  return delay({ message: 'OTP sent' })
+}
+
+export function signupVerify({ email, otp, account_type, password, confirm_password }) {
+  try {
+    checkCampusEmail(email)
+    if (mockAccounts[email]) throw mockError('An account with this email already exists. Log in instead.', 409)
+    checkNewPassword(password, confirm_password)
+    checkCode(otp)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+  mockAccounts[email] = {
+    password,
+    profile: {
+      id: nextId++, name: null, email, campus_id: 1, campus: 'Polaris Campus', course: null, year: null,
+      role: 'student', account_type: account_type || 'buyer', verified: true, is_admin: false, is_owner: false,
+      profile_completed: false, phone: null,
+    },
+  }
+  return delay(becomeAccount(email), 400)
+}
+
+export function login(email, password) {
+  const acc = mockAccounts[email]
+  if (!acc) return Promise.reject(mockError('Invalid email or password', 401))
+  if (!acc.password) {
+    return Promise.reject(mockError("You haven't set a password yet. We'll email you a code to log in.", 403, {
+      code: 'password_not_set', message: "You haven't set a password yet. We'll email you a code to log in.",
+    }))
+  }
+  if (acc.password !== password) return Promise.reject(mockError('Invalid email or password', 401))
+  return delay(becomeAccount(email), 400)
 }
 
 export function requestLoginCode(email) {
-  const domain = email.split('@')[1]
-  if (!campuses.some((c) => c.email_domain === domain && c.is_active)) {
-    return Promise.reject(new Error('That domain is not an approved campus yet. Ask your admin to add it.'))
+  try {
+    checkCampusEmail(email)
+    const acc = mockAccounts[email]
+    if (!acc) throw mockError('No account with this email yet. Sign up first.', 404)
+    if (acc.password) throw mockError('This account has a password. Log in with it, or use Forgot password.', 400)
+  } catch (err) {
+    return Promise.reject(err)
   }
-  return delay({ ok: true, message: 'Code sent' })
+  return delay({ message: 'OTP sent' })
 }
 
-export function login(email) {
-  localStorage.setItem('cm_token', 'mock-token')
-  return delay({ token: 'mock-token', user: seed.currentUser })
+export function loginWithCode(email, otp) {
+  try {
+    const acc = mockAccounts[email]
+    if (!acc) throw mockError('Code expired, request a new one', 400)
+    if (acc.password) throw mockError('This account has a password. Log in with it, or use Forgot password.', 400)
+    checkCode(otp)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+  return delay(becomeAccount(email), 400)
+}
+
+export function setPassword(password, confirm) {
+  const acc = mockAccounts[seed.currentUser.email]
+  try {
+    if (!acc) throw mockError('Log in first', 401)
+    if (acc.password) throw mockError('You already have a password. Use Forgot password to change it.', 409)
+    checkNewPassword(password, confirm)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+  acc.password = password
+  seed.currentUser.has_password = true
+  syncCurrentAccount()
+  return delay(seed.currentUser)
+}
+
+export function forgotPassword(email) {
+  try {
+    checkCampusEmail(email)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+  return delay({ message: "If an account exists for this email, we've sent it a code." })
+}
+
+export function resetPassword({ email, otp, password, confirm_password }) {
+  const acc = mockAccounts[email]
+  try {
+    if (!acc) throw mockError('Code expired, request a new one', 400)
+    checkCode(otp)
+    checkNewPassword(password, confirm_password)
+  } catch (err) {
+    return Promise.reject(err)
+  }
+  acc.password = password
+  return delay(becomeAccount(email), 400)
 }
 
 export function completeProfile(payload) {
@@ -588,7 +716,12 @@ export function recordViews(views) {
 }
 
 export function me() {
-  return localStorage.getItem('cm_token') ? delay(seed.currentUser, 150) : Promise.resolve(null)
+  const token = localStorage.getItem('cm_token')
+  if (!token) return Promise.resolve(null)
+  // "mock-token:<email>" picks the account; older "mock-token" means the main sample user.
+  const email = token.startsWith('mock-token:') ? token.slice('mock-token:'.length) : seed.currentUser.email
+  if (mockAccounts[email]) becomeAccount(email)
+  return delay(seed.currentUser, 150)
 }
 
 let productRequests = [

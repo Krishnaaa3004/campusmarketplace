@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     # --- OTP ---
     OTP_EXPIRE_MINUTES: int = 10
     OTP_PEPPER: str  # extra secret mixed into the OTP hash
+    OTP_MAX_ATTEMPTS: int = 5  # wrong guesses before a code is thrown away
+
+    # --- Password login ---
+    LOGIN_MAX_FAILURES: int = 5  # wrong passwords in a row before the account is locked
+    LOGIN_LOCK_MINUTES: int = 15
+    LOGIN_IP_LIMIT: int = 20  # password attempts per IP address...
+    LOGIN_IP_WINDOW_MINUTES: int = 15  # ...within this window
 
     # --- Allowed college domains for signup ---
     ALLOWED_EMAIL_DOMAINS: list[str] = ["medhaviskillsuniversity.edu.in"]

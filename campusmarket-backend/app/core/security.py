@@ -1,10 +1,13 @@
 import hashlib
+import hmac
 import secrets
 import string
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -26,7 +29,25 @@ def hash_otp(otp: str) -> str:
 
 
 def verify_otp(otp: str, hashed: str) -> bool:
-    return hash_otp(otp) == hashed
+    return hmac.compare_digest(hash_otp(otp), hashed)
+
+
+# --- Passwords (argon2id; never store or log the plain text) ---
+
+_hasher = PasswordHasher()
+# Checked against when the email doesn't exist, so a wrong email takes as long as a wrong password.
+_DUMMY_HASH = _hasher.hash("not-a-real-password-0")
+
+
+def hash_password(password: str) -> str:
+    return _hasher.hash(password)
+
+
+def verify_password(password: str, password_hash: str | None) -> bool:
+    try:
+        return _hasher.verify(password_hash or _DUMMY_HASH, password) and password_hash is not None
+    except (VerificationError, InvalidHashError):
+        return False
 
 
 def create_access_token(user_id) -> str:
@@ -45,10 +66,12 @@ def decode_access_token(token: str) -> uuid.UUID:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def get_current_user(
+def get_current_user_any(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    """Any logged-in user, including accounts that still have to create a password.
+    Only GET /users/me and POST /auth/set-password use this directly."""
     user_id = decode_access_token(credentials.credentials)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -56,18 +79,31 @@ def get_current_user(
     return user
 
 
+PASSWORD_REQUIRED = {"code": "password_required", "message": "Create a password to continue"}
+
+
+def get_current_user(user: User = Depends(get_current_user_any)) -> User:
+    """Logged in AND has a password. Accounts created before passwords existed are blocked
+    from everything (all other dependencies build on this one) until they set one."""
+    if not user.password_hash:
+        raise HTTPException(status_code=403, detail=PASSWORD_REQUIRED)
+    return user
+
+
 def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User | None:
-    """Like get_current_user, but guests (no or bad token) get None instead of a 401."""
+    """Like get_current_user, but guests (no or bad token) get None instead of a 401.
+    Accounts that still need to create a password are treated as guests too."""
     if not credentials:
         return None
     try:
         user_id = decode_access_token(credentials.credentials)
     except HTTPException:
         return None
-    return db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == user_id).first()
+    return user if user and user.password_hash else None
 
 
 def require_verified(user: User = Depends(get_current_user)) -> User:

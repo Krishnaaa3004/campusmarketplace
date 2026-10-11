@@ -10,7 +10,7 @@ sign up, and every handover happens on campus with cash or UPI.
 | **Resource Hub** | Study material for sale or free, as a soft copy (a PDF we host, or a drive link) or a hard copy (picked up on campus). Previews are rendered on the server, and paid access is granted by the seller. |
 | **Looking For** | Students post what they need ("Casio fx-991CW for tomorrow"). Sellers see these requests in their dashboard. |
 | **Notifications** | The seller dashboard and navbar bell show access requests on your resources and students tapping WhatsApp / Email on your items, plus Looking For posts. |
-| **Accounts** | Sign-up with a one-time code sent to your college email, onboarding, interests, profile with avatar and phone, and buyer → seller upgrade. |
+| **Accounts** | Sign up with a college email and password (a one-time emailed code verifies the email), log in with email + password, forgot password, onboarding, interests, profile with avatar and phone, and buyer → seller upgrade. |
 | **Wishlist** | Saved listings, stored in the browser (per user). |
 
 ## Tech stack
@@ -37,7 +37,7 @@ npm run dev            # http://localhost:5173
 | `VITE_DATA_SOURCE` | `mock` runs everything on in-memory sample data (no backend needed). `live` calls the API. |
 | `VITE_API_BASE_URL` | `http://localhost:8000/api` |
 
-In **mock** mode the seeded user has `role: "admin"`, so `/admin` is reachable and every
+In **mock** mode, log in as `aashi@polaris.edu` / `campus123` (or `legacy@polaris.edu` with any password and any 6-digit code to see the mandatory "Create a password" step). The seeded user has `role: "admin"`, so `/admin` is reachable and every
 resource opens with full access. To see the locked and request states, set
 `currentUser.role` to `'student'` in `src/data/sample.js`.
 
@@ -153,8 +153,12 @@ All paths are under `/api`. In this table, *seller* means `account_type = "selle
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/auth/signup` | – | Checks the domain, emails a 6-digit OTP |
-| POST | `/auth/login` | – | `{ email, otp }` → `{ token, user }` |
+| POST | `/auth/signup` | – | `{ email, account_type }`: checks the domain and emails a 6-digit code. Creates nothing yet |
+| POST | `/auth/signup/verify` | – | `{ email, otp, account_type, password, confirm_password }` → `{ token, user }`: creates the verified account |
+| POST | `/auth/login` | – | `{ email, password }` → `{ token, user }`. Generic "Invalid email or password"; 5 failures lock the account for 15 min, plus a per-IP limit. `403 { code: "password_not_set" }` for accounts from before passwords |
+| POST | `/auth/login-code`, `/auth/login/otp` | – | One-time code login, **only** for accounts without a password (who must then set one) |
+| POST | `/auth/set-password` | user | `{ password, confirm_password }`: first password only (409 if one exists). Until it's set, every other endpoint except `GET /users/me` returns `403 { code: "password_required" }` |
+| POST | `/auth/password/forgot`, `/auth/password/reset` | – | Email a reset code (same answer whether or not the account exists), then `{ email, otp, password, confirm_password }` → `{ token, user }` |
 | POST | `/auth/profile`, `/auth/interests`, `/auth/account-type` | user | Onboarding, interests, buyer → seller upgrade |
 | GET / PATCH | `/users/me` | user | |
 | POST / DELETE | `/users/me/avatar` | user | Multipart, field `file` |

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 from app.core.config import settings
@@ -22,12 +22,21 @@ class User(Base):
     avatar_url = Column(String, nullable=True)
     phone = Column(String, nullable=True)  # digits with country code, e.g. "919876543210"
     verified = Column(Boolean, default=False)
+    # argon2id hash. Null for accounts created before passwords existed: they must set one
+    # (see get_current_user) before using anything else.
+    password_hash = Column(String(255), nullable=True)
+    failed_logins = Column(Integer, nullable=False, default=0, server_default="0")
+    locked_until = Column(DateTime, nullable=True)
     profile_completed = Column(Boolean, default=False)
     interests = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
     # Recent things this user opened, for recommendations: [{"kind": "listing"|"resource",
     # "key": <category or subject>, "ts": <epoch ms>}], newest last, capped at VIEW_HISTORY_MAX.
     view_history = Column(JSON, nullable=False, default=list, server_default="[]")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_hash)
 
     @property
     def is_owner(self) -> bool:

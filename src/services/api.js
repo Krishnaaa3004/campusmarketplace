@@ -110,14 +110,34 @@ export const reportsApi = {
 }
 
 export const authApi = {
-  // POST /api/auth/signup  body: { email, account_type: "buyer" | "seller" }  -> sends OTP / magic link
+  // POST /api/auth/signup  body: { email, account_type }  -> emails a code (nothing is created yet)
   signup: (email, accountType = 'buyer') =>
     pick(() => http.post('/auth/signup', { email, account_type: accountType }), () => mock.signup(email, accountType))(),
-  // POST /api/auth/login-code  body: { email }  -> code for an EXISTING account only (404 if none)
+  // POST /api/auth/signup/verify  body: { email, otp, account_type, password, confirm_password } -> { token, user }
+  signupVerify: (payload) =>
+    pick(() => http.post('/auth/signup/verify', payload), () => mock.signupVerify(payload))(),
+  // POST /api/auth/login  body: { email, password } -> { token, user }
+  //   403 { detail: { code: "password_not_set" } } for accounts from before passwords -> use the code flow
+  login: (email, password) =>
+    pick(() => http.post('/auth/login', { email, password }), () => mock.login(email, password))(),
+  // POST /api/auth/login-code  body: { email }  -> one-time code, only for accounts without a password
   requestLoginCode: (email) =>
     pick(() => http.post('/auth/login-code', { email }), () => mock.requestLoginCode(email))(),
-  // POST /api/auth/login  body: { email, otp }
-  login: (email, otp) => pick(() => http.post('/auth/login', { email, otp }), () => mock.login(email, otp))(),
+  // POST /api/auth/login/otp  body: { email, otp } -> { token, user }  (then a password must be created)
+  loginWithCode: (email, otp) =>
+    pick(() => http.post('/auth/login/otp', { email, otp }), () => mock.loginWithCode(email, otp))(),
+  // POST /api/auth/set-password  body: { password, confirm_password }  (only when none is set yet)
+  setPassword: (password, confirmPassword) =>
+    pick(
+      () => http.post('/auth/set-password', { password, confirm_password: confirmPassword }),
+      () => mock.setPassword(password, confirmPassword)
+    )(),
+  // POST /api/auth/password/forgot  body: { email }  -> emails a reset code (same answer either way)
+  forgotPassword: (email) =>
+    pick(() => http.post('/auth/password/forgot', { email }), () => mock.forgotPassword(email))(),
+  // POST /api/auth/password/reset  body: { email, otp, password, confirm_password } -> { token, user }
+  resetPassword: (payload) =>
+    pick(() => http.post('/auth/password/reset', payload), () => mock.resetPassword(payload))(),
   // POST /api/auth/profile — completes onboarding (name, college, course, year)
   completeProfile: (payload) =>
     pick(() => http.post('/auth/profile', payload), () => mock.completeProfile(payload))(),

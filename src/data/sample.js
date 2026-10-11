@@ -30,7 +30,17 @@ export const campuses = [
 export const currentUser = {
   id: 1, name: 'Aashi K.', email: 'aashi@polaris.edu', campus_id: 1, campus: 'Polaris Campus',
   course: 'AI/ML', year: '2nd Year', role: 'admin', account_type: 'seller', verified: true,
-  is_admin: true, is_owner: true,
+  is_admin: true, is_owner: true, has_password: true, profile_completed: true, phone: '919000000001',
+}
+
+// Mock logins (VITE_DATA_SOURCE=mock). Passwords are only for local testing.
+export const MOCK_PASSWORD = 'campus123'
+// An account from before passwords existed: log in with any password, enter any 6-digit code,
+// and the mandatory "Create a password" modal appears.
+export const legacyUser = {
+  id: 7, name: 'Nikhil (no password yet)', email: 'legacy@polaris.edu', campus_id: 1, campus: 'Polaris Campus',
+  course: 'CSE', year: '3rd Year', role: 'student', account_type: 'seller', verified: true,
+  is_admin: false, is_owner: false, has_password: false, profile_completed: true, phone: '919000000007',
 }
 
 const seller = (id, name, campus_id) => ({

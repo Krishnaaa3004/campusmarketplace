@@ -27,7 +27,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.routes import resources as resources_routes
 from app.core import storage as storage_module
 from app.core.storage import LocalStorage
-from app.core.security import create_access_token
+from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -85,8 +85,22 @@ def client(db_session, file_dirs):
     app.dependency_overrides.clear()
 
 
+# Every test user has this password unless a test says otherwise (hashed once: argon2 is slow on purpose).
+TEST_PASSWORD = "campus123"
+TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
+
+
+@pytest.fixture(autouse=True)
+def reset_login_limiter():
+    from app.api.routes import auth as auth_routes
+
+    auth_routes._login_ip_limiter.reset()
+    yield
+
+
 def _user(db, email, **kw):
     defaults = dict(
+        password_hash=TEST_PASSWORD_HASH,
         name=email.split("@")[0].title(),
         verified=True,
         profile_completed=True,

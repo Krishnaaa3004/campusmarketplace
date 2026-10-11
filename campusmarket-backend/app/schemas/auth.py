@@ -2,7 +2,7 @@ import re
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.schemas.listing import CATEGORY_ART
 
@@ -23,7 +23,66 @@ class AccountTypeRequest(BaseModel):
     account_type: AccountType
 
 
-class LoginRequest(BaseModel):
+# --- Passwords ---
+# Same rules as src/lib/password.js: 8+ characters with at least one letter and one number.
+PASSWORD_MIN = 8
+PASSWORD_MAX = 128
+
+
+def check_password_rules(password: str) -> str:
+    if len(password) < PASSWORD_MIN:
+        raise ValueError(f"Password must be at least {PASSWORD_MIN} characters")
+    if len(password) > PASSWORD_MAX:
+        raise ValueError(f"Password must be at most {PASSWORD_MAX} characters")
+    if not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
+        raise ValueError("Password must include at least one letter and one number")
+    return password
+
+
+class NewPasswordMixin(BaseModel):
+    password: str
+    confirm_password: str
+
+    @field_validator("password")
+    @classmethod
+    def strong_enough(cls, value: str) -> str:
+        return check_password_rules(value)
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords don't match")
+        return self
+
+
+class SignupVerifyRequest(NewPasswordMixin):
+    """Step 2 of signup: the emailed code proves the college email; only then is the
+    account created with this password."""
+    email: EmailStr
+    otp: str
+    account_type: AccountType = "buyer"
+
+
+class PasswordLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(max_length=PASSWORD_MAX)
+
+
+class OtpLoginRequest(BaseModel):
+    """One-time code login, only for accounts that don't have a password yet."""
+    email: EmailStr
+    otp: str
+
+
+class SetPasswordRequest(NewPasswordMixin):
+    pass
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(NewPasswordMixin):
     email: EmailStr
     otp: str
 
@@ -127,6 +186,7 @@ class UserOut(BaseModel):
     phone: str | None = None
     verified: bool
     profile_completed: bool
+    has_password: bool = False  # never the hash itself
     interests: list[str] = []
     view_history: list[ViewEntry] = []
 

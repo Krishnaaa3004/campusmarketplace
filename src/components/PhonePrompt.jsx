@@ -11,14 +11,15 @@ const SKIP = ['/onboarding', '/login', '/signup']
 // Accounts created before the WhatsApp number was required: ask once they're logged in,
 // on any page, until they add one. "Contact Seller" opens a chat with this number.
 export default function PhonePrompt() {
-  const { user, isVerified, updateProfile, logout } = useAuth()
+  const { user, isVerified, needsPassword, updateProfile, logout } = useAuth()
   const { pathname } = useLocation()
   const toast = useToast()
   const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const needed = Boolean(user && isVerified && user.profile_completed && !user.phone)
+  // After the password step (SetPasswordModal) if both are missing.
+  const needed = Boolean(user && isVerified && !needsPassword && user.profile_completed && !user.phone)
   if (!needed || SKIP.includes(pathname)) return null
 
   async function save(e) {

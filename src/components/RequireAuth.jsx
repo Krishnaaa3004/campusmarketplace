@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth.jsx'
 // non-admins never reach /admin; buyers never reach seller pages.
 // The backend must enforce the same rules.
 export default function RequireAuth({ role, seller = false }) {
-  const { user, loading, isVerified, isSeller, isAdmin } = useAuth()
+  const { user, loading, isVerified, isSeller, isAdmin, needsPassword } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -13,6 +13,10 @@ export default function RequireAuth({ role, seller = false }) {
   }
   if (!user || !isVerified) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
+  }
+  // Accounts without a password see only the "Create a password" modal; nothing behind it renders.
+  if (needsPassword) {
+    return <div className="mx-auto max-w-[1180px] px-6 py-16"><div className="skeleton h-64" /></div>
   }
   if (role === 'admin' ? !isAdmin : role && user.role !== role) {
     return <Navigate to="/marketplace" replace />
