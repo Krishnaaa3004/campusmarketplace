@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     # --- JWT ---
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    # Sessions are renewed each time the app opens (POST /auth/refresh), so people who use the
+    # site at least once a month stay logged in. Changing the password still ends old sessions.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
 
     # --- OTP ---
     OTP_EXPIRE_MINUTES: int = 10
@@ -26,6 +28,11 @@ class Settings(BaseSettings):
     LOGIN_LOCK_MINUTES: int = 15
     LOGIN_IP_LIMIT: int = 20  # password attempts per IP address...
     LOGIN_IP_WINDOW_MINUTES: int = 15  # ...within this window
+
+    # --- Code emails (signup / login code / password reset) ---
+    CODE_EMAIL_COOLDOWN_SECONDS: int = 60  # one code per address per minute
+    CODE_IP_LIMIT: int = 10  # codes per IP address...
+    CODE_IP_WINDOW_MINUTES: int = 15  # ...within this window
 
     # --- Allowed college domains for signup ---
     ALLOWED_EMAIL_DOMAINS: list[str] = ["medhaviskillsuniversity.edu.in"]

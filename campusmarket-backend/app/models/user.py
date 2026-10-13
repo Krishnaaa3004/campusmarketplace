@@ -27,6 +27,8 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)
     failed_logins = Column(Integer, nullable=False, default=0, server_default="0")
     locked_until = Column(DateTime, nullable=True)
+    # Login sessions issued before this moment are rejected (set on every password change).
+    password_changed_at = Column(DateTime, nullable=True)
     profile_completed = Column(Boolean, default=False)
     interests = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
     # Recent things this user opened, for recommendations: [{"kind": "listing"|"resource",

@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth.jsx'
 import { CATEGORIES, CONDITIONS, FOOD_CATEGORY, FOOD_TEMPS, LISTING_TYPES } from '../data/sample.js'
 import { todayISO } from '../lib/format.js'
 import { trackEvent } from '../lib/analytics.js'
+import { shrinkToJpeg } from '../lib/images.js'
 
 const BLANK = {
   title: '', category: CATEGORIES[0], listing_type: 'sale',
@@ -112,7 +113,11 @@ export default function Sell() {
       const saved = isEdit
         ? await listingsApi.update(id, { ...payload, images: existingImages })
         : await listingsApi.create(payload)
-      if (files.length) await listingsApi.uploadImages(saved?.id ?? id, files)
+      if (files.length) {
+        // Shrink to JPEGs (max 1600px) first: big phone photos upload faster and stay under the server limit.
+        const photos = await Promise.all(files.map((f, i) => shrinkToJpeg(f, { maxSize: 1600, quality: 0.85, name: `photo-${i + 1}.jpg` })))
+        await listingsApi.uploadImages(saved?.id ?? id, photos)
+      }
       if (!isEdit) trackEvent('post_listing', { category: payload.category, listing_type: payload.listing_type })
       toast(isEdit ? 'Changes saved' : 'Published')
       navigate('/dashboard')

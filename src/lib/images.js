@@ -1,7 +1,7 @@
 // Shrink a picked photo in the browser before uploading: any size or common format in,
 // a small JPEG out. Phone photos are often 5-10 MB with odd extensions (.jfif, none);
-// a profile picture never needs more than this.
-export async function shrinkToJpeg(file, { maxSize = 512, quality = 0.86 } = {}) {
+// a profile picture never needs more than this (listing photos use a larger maxSize).
+export async function shrinkToJpeg(file, { maxSize = 512, quality = 0.86, name = 'avatar.jpg' } = {}) {
   let bitmap
   try {
     bitmap = await createImageBitmap(file)
@@ -21,5 +21,5 @@ export async function shrinkToJpeg(file, { maxSize = 512, quality = 0.86 } = {})
   bitmap.close?.()
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
   if (!blob) throw new Error("Couldn't process that photo. Try a different one.")
-  return new File([blob], 'avatar.jpg', { type: 'image/jpeg' })
+  return new File([blob], name, { type: 'image/jpeg' })
 }

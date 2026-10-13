@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 CATEGORY_ART = {
     "Textbooks": {"emoji": "📘", "bg": "#F1EAFF"},
@@ -36,30 +36,43 @@ class SellerOut(BaseModel):
         from_attributes = True
 
 
+MAX_PRICE = 1_000_000
+
+
+def _known_category(value: str | None) -> str | None:
+    if value is not None and value not in CATEGORY_ART:
+        raise ValueError("Pick one of the listed categories")
+    return value
+
+
 class ListingCreate(BaseModel):
-    title: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=120)
     category: str
     listing_type: Literal["sale", "rent", "free"] = "sale"
-    price: float = 0
-    condition: str
-    description: Optional[str] = None
-    pickup_spot: str = Field(min_length=1)
+    price: float = Field(default=0, ge=0, le=MAX_PRICE)
+    condition: str = Field(max_length=30)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    pickup_spot: str = Field(min_length=1, max_length=120)
     food_temp: Optional[Literal["hot", "cold"]] = None  # F&B only, required there
     expiry_date: Optional[date] = None  # F&B only, optional
 
+    _category = field_validator("category")(classmethod(lambda cls, v: _known_category(v)))
+
 
 class ListingUpdate(BaseModel):
-    title: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=120)
     category: Optional[str] = None
     listing_type: Optional[Literal["sale", "rent", "free"]] = None
-    price: Optional[float] = None
-    condition: Optional[str] = None
-    description: Optional[str] = None
-    pickup_spot: Optional[str] = None
+    price: Optional[float] = Field(default=None, ge=0, le=MAX_PRICE)
+    condition: Optional[str] = Field(default=None, max_length=30)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    pickup_spot: Optional[str] = Field(default=None, min_length=1, max_length=120)
     food_temp: Optional[Literal["hot", "cold"]] = None
     expiry_date: Optional[date] = None
     # URLs of photos to KEEP. Any current photo not listed here is removed.
     images: Optional[list[str]] = None
+
+    _category = field_validator("category")(classmethod(lambda cls, v: _known_category(v)))
 
 
 class StatusUpdate(BaseModel):

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.images import ImageError, check_image, read_upload
 from app.core.security import require_seller, require_verified
 from app.core.storage import delete_public_urls, storage
 from app.db.session import get_db
@@ -30,6 +31,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 MAX_IMAGES = 3
+MAX_PHOTO_BYTES = 8 * 1024 * 1024  # the Sell page shrinks photos first, so this is generous
 
 
 def _delete_upload_files(urls: list[str]) -> None:
@@ -272,13 +274,20 @@ def upload_images(
     if room <= 0:
         raise HTTPException(status_code=400, detail=f"A listing can have at most {MAX_IMAGES} photos")
 
-    urls = []
+    # Check every photo before storing any, so one bad file doesn't leave half an upload behind.
+    checked = []
     for f in files[:room]:
-        if f.content_type and not f.content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="Only image files are allowed")
-        ext = (Path(f.filename or "").suffix or ".jpg").lower()
+        try:
+            data = read_upload(f.file, MAX_PHOTO_BYTES)
+            content_type, ext = check_image(data)
+        except ImageError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        checked.append((data, content_type, ext))
+
+    urls = []
+    for data, content_type, ext in checked:
         key = f"listings/{uuid.uuid4().hex}{ext}"
-        storage.put_public(key, f.file.read(), f.content_type or "image/jpeg")
+        storage.put_public(key, data, content_type)
         urls.append(storage.public_url(key, str(request.base_url)))
 
     listing.images = [*(listing.images or []), *urls]

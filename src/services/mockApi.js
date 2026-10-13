@@ -652,7 +652,7 @@ export function setPassword(password, confirm) {
   acc.password = password
   seed.currentUser.has_password = true
   syncCurrentAccount()
-  return delay(seed.currentUser)
+  return delay(becomeAccount(seed.currentUser.email))
 }
 
 export function forgotPassword(email) {
@@ -713,6 +713,12 @@ export function recordViews(views) {
   const now = Date.now()
   seed.currentUser.view_history = [...(seed.currentUser.view_history || []), ...views.map((v) => ({ ...v, ts: now }))].slice(-50)
   return delay(null, 50)
+}
+
+export function refreshSession() {
+  const token = localStorage.getItem('cm_token')
+  if (!token) return Promise.reject(mockError('Log in first', 401))
+  return delay({ token, user: seed.currentUser }, 50)
 }
 
 export function me() {

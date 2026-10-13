@@ -1,7 +1,6 @@
 import time
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import func
@@ -9,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.email import send_otp_email
+from app.core.images import ImageError, check_image, read_upload
 from app.core.ratelimit import SlidingWindowLimiter
 from app.core.security import (
     create_access_token,
@@ -47,8 +47,6 @@ router = APIRouter(prefix="/api", tags=["auth"])
 
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
 VIEW_HISTORY_MAX = 50
-AVATAR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-AVATAR_TYPES = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/pjpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 
 
 def _check_domain(email: str) -> None:
@@ -99,18 +97,32 @@ def _find_user(db: Session, email: str) -> User | None:
 INVALID_LOGIN = "Invalid email or password"
 LOCKED_MESSAGE = "Too many failed attempts. Try again in a few minutes, or use Forgot password."
 _login_ip_limiter = SlidingWindowLimiter(settings.LOGIN_IP_LIMIT, settings.LOGIN_IP_WINDOW_MINUTES * 60)
+# Stops email bombing and protects the Brevo quota (each code is one email).
+_code_email_limiter = SlidingWindowLimiter(1, settings.CODE_EMAIL_COOLDOWN_SECONDS)
+_code_ip_limiter = SlidingWindowLimiter(settings.CODE_IP_LIMIT, settings.CODE_IP_WINDOW_MINUTES * 60)
+CODE_TOO_SOON = "Please wait a minute before asking for another code."
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _may_send_code(request: Request, email: str) -> bool:
+    return _code_ip_limiter.allow(_client_ip(request)) and _code_email_limiter.allow(email.lower())
 
 
 # ---------- signup (code proves the college email; account + password created after) ----------
 
 
 @router.post("/auth/signup")
-def signup(payload: SignupRequest, db: Session = Depends(get_db)):
+def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_db)):
     """Step 1: send a code. Nothing is created until the code is verified (step 2)."""
     _check_domain(payload.email)
     existing = _find_user(db, payload.email)
     if existing and existing.verified:
         raise HTTPException(status_code=409, detail="An account with this email already exists. Log in instead.")
+    if not _may_send_code(request, payload.email):
+        raise HTTPException(status_code=429, detail=CODE_TOO_SOON)
     otp = _issue_otp(db, payload.email, "signup")
     db.commit()
     send_otp_email(payload.email, otp)
@@ -133,6 +145,7 @@ def signup_verify(payload: SignupVerifyRequest, db: Session = Depends(get_db)):
     user.account_type = payload.account_type
     user.verified = True
     user.password_hash = hash_password(payload.password)
+    user.password_changed_at = datetime.utcnow()  # logs out every older session
     db.commit()
     db.refresh(user)
     return _login_response(user)
@@ -144,8 +157,7 @@ def signup_verify(payload: SignupVerifyRequest, db: Session = Depends(get_db)):
 @router.post("/auth/login", response_model=LoginResponse)
 def login(payload: PasswordLoginRequest, request: Request, db: Session = Depends(get_db)):
     """Email + password. One generic error for a wrong email OR password."""
-    ip = request.client.host if request.client else "unknown"
-    if not _login_ip_limiter.allow(ip):
+    if not _login_ip_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many login attempts. Wait a few minutes and try again.")
 
     user = _find_user(db, payload.email)
@@ -179,7 +191,7 @@ def login(payload: PasswordLoginRequest, request: Request, db: Session = Depends
 
 
 @router.post("/auth/login-code")
-def login_code(payload: LoginCodeRequest, db: Session = Depends(get_db)):
+def login_code(payload: LoginCodeRequest, request: Request, db: Session = Depends(get_db)):
     """Send a one-time login code. Only for existing accounts that have no password yet;
     everyone else logs in with their password (or uses Forgot password)."""
     _check_domain(payload.email)
@@ -188,6 +200,8 @@ def login_code(payload: LoginCodeRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No account with this email yet. Sign up first.")
     if user.password_hash:
         raise HTTPException(status_code=400, detail="This account has a password. Log in with it, or use Forgot password.")
+    if not _may_send_code(request, payload.email):
+        raise HTTPException(status_code=429, detail=CODE_TOO_SOON)
     otp = _issue_otp(db, payload.email, "login")
     db.commit()
     send_otp_email(payload.email, otp)
@@ -212,7 +226,7 @@ def login_with_code(payload: OtpLoginRequest, db: Session = Depends(get_db)):
 # ---------- passwords ----------
 
 
-@router.post("/auth/set-password", response_model=UserOut)
+@router.post("/auth/set-password", response_model=LoginResponse)
 def set_password(
     payload: SetPasswordRequest,
     db: Session = Depends(get_db),
@@ -223,17 +237,20 @@ def set_password(
     if user.password_hash:
         raise HTTPException(status_code=409, detail="You already have a password. Use Forgot password to change it.")
     user.password_hash = hash_password(payload.password)
+    user.password_changed_at = datetime.utcnow()  # logs out every older session
     db.commit()
     db.refresh(user)
-    return user
+    # The change logs out older sessions, including this one, so hand back a fresh one.
+    return _login_response(user)
 
 
 @router.post("/auth/password/forgot")
-def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    """Email a reset code. Same answer whether or not the account exists."""
+def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    """Email a reset code. Same answer whether or not the account exists (and when rate-limited,
+    so the limit can't be used to find out which emails have accounts)."""
     _check_domain(payload.email)
     user = _find_user(db, payload.email)
-    if user and user.verified:
+    if user and user.verified and _may_send_code(request, payload.email):
         otp = _issue_otp(db, payload.email, "reset")
         db.commit()
         send_otp_email(payload.email, otp)
@@ -248,6 +265,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     if not user or not user.verified:
         raise HTTPException(status_code=400, detail="Code expired, request a new one")
     user.password_hash = hash_password(payload.password)
+    user.password_changed_at = datetime.utcnow()  # logs out every older session
     user.failed_logins = 0
     user.locked_until = None
     db.commit()
@@ -320,21 +338,14 @@ def upload_avatar(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=400, detail="Profile picture must be an image")
-    # Go by the actual type, not the file name (".jfif" or no extension is still a JPEG).
-    ext = AVATAR_TYPES.get((file.content_type or "").lower()) or Path(file.filename or "").suffix.lower()
-    if ext not in AVATAR_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Use a JPG, PNG, WEBP or GIF image")
-
-    file.file.seek(0, 2)
-    size = file.file.tell()
-    file.file.seek(0)
-    if size > MAX_AVATAR_BYTES:
-        raise HTTPException(status_code=400, detail="Profile picture must be under 5 MB")
+    try:
+        data = read_upload(file.file, MAX_AVATAR_BYTES)
+        content_type, ext = check_image(data)  # by the actual bytes, not the file name or browser's label
+    except ImageError as e:
+        raise HTTPException(status_code=400, detail=str(e).replace("Images must", "Profile picture must"))
 
     key = f"avatars/{uuid.uuid4().hex}{ext}"
-    storage.put_public(key, file.file.read(), file.content_type)
+    storage.put_public(key, data, content_type)
 
     old = user.avatar_url
     user.avatar_url = storage.public_url(key, str(request.base_url))
@@ -372,6 +383,13 @@ def record_views(
     # Assign a new list so SQLAlchemy notices the JSON column changed.
     user.view_history = [*(user.view_history or []), *added][-VIEW_HISTORY_MAX:]
     db.commit()
+
+
+@router.post("/auth/refresh", response_model=LoginResponse)
+def refresh_session(user: User = Depends(get_current_user_any)):
+    """Swap a still-valid session for a fresh 30-day one. The app calls this on start-up, so
+    regular users never get logged out. Old sessions killed by a password change can't renew."""
+    return _login_response(user)
 
 
 @router.get("/users/me", response_model=UserOut)

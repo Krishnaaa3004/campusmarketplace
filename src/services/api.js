@@ -126,7 +126,7 @@ export const authApi = {
   // POST /api/auth/login/otp  body: { email, otp } -> { token, user }  (then a password must be created)
   loginWithCode: (email, otp) =>
     pick(() => http.post('/auth/login/otp', { email, otp }), () => mock.loginWithCode(email, otp))(),
-  // POST /api/auth/set-password  body: { password, confirm_password }  (only when none is set yet)
+  // POST /api/auth/set-password  body: { password, confirm_password } -> { token, user }  (only when none is set yet)
   setPassword: (password, confirmPassword) =>
     pick(
       () => http.post('/auth/set-password', { password, confirm_password: confirmPassword }),
@@ -159,6 +159,8 @@ export const authApi = {
   removeAvatar: () => pick(() => http.del('/users/me/avatar'), () => mock.removeAvatar())(),
   // POST /api/users/me/views  body: { views: [{ kind: "listing" | "resource", key }] }  (recommendation history)
   recordViews: (views) => pick(() => http.post('/users/me/views', { views }), () => mock.recordViews(views))(),
+  // POST /api/auth/refresh -> { token, user }: renews a valid session for another 30 days
+  refreshSession: () => pick(() => http.post('/auth/refresh'), () => mock.refreshSession())(),
   // GET /api/users/me
   me: () => pick(() => http.get('/users/me'), () => mock.me())(),
   logout: () => {

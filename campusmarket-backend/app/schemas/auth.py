@@ -88,10 +88,10 @@ class ResetPasswordRequest(NewPasswordMixin):
 
 
 class ProfileRequest(BaseModel):
-    name: str
-    college: str
-    course: str
-    year: str
+    name: str = Field(max_length=80)
+    college: str = Field(max_length=120)
+    course: str = Field(max_length=60)
+    year: str = Field(max_length=40)
     # WhatsApp number: buyers tap "Contact Seller" and land on the seller's own chat.
     phone: str
 
@@ -121,11 +121,11 @@ def normalize_phone(value: str | None) -> str | None:
 
 class ProfileUpdateRequest(BaseModel):
     # Every field is optional; only the ones sent are changed.
-    name: str | None = None
-    college: str | None = None
-    course: str | None = None
-    year: str | None = None
-    phone: str | None = None
+    name: str | None = Field(default=None, max_length=80)
+    college: str | None = Field(default=None, max_length=120)
+    course: str | None = Field(default=None, max_length=60)
+    year: str | None = Field(default=None, max_length=40)
+    phone: str | None = Field(default=None, max_length=20)
 
     @field_validator("name", "college")
     @classmethod

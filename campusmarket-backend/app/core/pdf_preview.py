@@ -60,7 +60,9 @@ def open_pdf(data: bytes) -> fitz.Document:
 
 
 def _render(page: fitz.Page, width: int) -> Image.Image:
-    zoom = min(width / max(page.rect.width, 1), 3.0)
+    # Cap height too: a PDF page shaped like a 1-pt-wide ribbon would otherwise render to a
+    # gigantic image and exhaust the server's memory.
+    zoom = min(width / max(page.rect.width, 1), (width * 2) / max(page.rect.height, 1), 3.0)
     pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
 

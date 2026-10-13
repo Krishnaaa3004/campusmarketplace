@@ -51,15 +51,18 @@ def verify_password(password: str, password_hash: str | None) -> bool:
 
 
 def create_access_token(user_id) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {"sub": str(user_id), "exp": expire}
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    # iat lets a password change log out every session issued before it (see _check_session).
+    payload = {"sub": str(user_id), "exp": expire, "iat": int(now.timestamp())}
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> uuid.UUID:
+def decode_access_token(token: str) -> tuple[uuid.UUID, int]:
+    """(user id, issued-at seconds). Raises 401 for anything invalid or expired."""
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        return uuid.UUID(payload["sub"])
+        return uuid.UUID(payload["sub"]), int(payload.get("iat", 0))
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Session expired, log in again")
     except (jwt.InvalidTokenError, KeyError, ValueError, TypeError):
@@ -72,11 +75,22 @@ def get_current_user_any(
 ) -> User:
     """Any logged-in user, including accounts that still have to create a password.
     Only GET /users/me and POST /auth/set-password use this directly."""
-    user_id = decode_access_token(credentials.credentials)
+    user_id, issued_at = decode_access_token(credentials.credentials)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if not _session_still_valid(user, issued_at):
+        raise HTTPException(status_code=401, detail="Your password was changed. Log in again.")
     return user
+
+
+def _session_still_valid(user: User, issued_at: int) -> bool:
+    """Sessions issued before the latest password change are dead (e.g. a stolen token
+    stops working the moment the owner resets their password)."""
+    changed = user.password_changed_at
+    if not changed:
+        return True
+    return issued_at >= int(changed.replace(tzinfo=timezone.utc).timestamp())
 
 
 PASSWORD_REQUIRED = {"code": "password_required", "message": "Create a password to continue"}
@@ -99,11 +113,13 @@ def get_optional_user(
     if not credentials:
         return None
     try:
-        user_id = decode_access_token(credentials.credentials)
+        user_id, issued_at = decode_access_token(credentials.credentials)
     except HTTPException:
         return None
     user = db.query(User).filter(User.id == user_id).first()
-    return user if user and user.password_hash else None
+    if not user or not user.password_hash or not _session_still_valid(user, issued_at):
+        return None
+    return user
 
 
 def require_verified(user: User = Depends(get_current_user)) -> User:

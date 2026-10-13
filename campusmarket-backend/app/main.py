@@ -19,7 +19,23 @@ from app.core.email import EmailError
 from app.core.storage import StorageError, storage
 from app.db.session import engine
 
-app = FastAPI(title=settings.APP_NAME)
+_prod = settings.ENVIRONMENT.lower() == "production"
+# The interactive API docs are handy locally but just a map for attackers in production.
+app = FastAPI(
+    title=settings.APP_NAME,
+    docs_url=None if _prod else "/docs",
+    redoc_url=None if _prod else "/redoc",
+    openapi_url=None if _prod else "/openapi.json",
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
 
 app.include_router(auth_router)
 app.include_router(admin_router)

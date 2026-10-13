@@ -95,6 +95,8 @@ def reset_login_limiter():
     from app.api.routes import auth as auth_routes
 
     auth_routes._login_ip_limiter.reset()
+    auth_routes._code_email_limiter.reset()
+    auth_routes._code_ip_limiter.reset()
     yield
 
 

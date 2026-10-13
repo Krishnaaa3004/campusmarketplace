@@ -9,7 +9,20 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    authApi.me().then(setUser).catch(() => setUser(null)).finally(() => setLoading(false))
+    authApi
+      .me()
+      .then((u) => {
+        setUser(u)
+        // Stay logged in: each visit renews the session for another 30 days.
+        if (u) {
+          authApi
+            .refreshSession()
+            .then((res) => res?.token && localStorage.setItem('cm_token', res.token))
+            .catch(() => {})
+        }
+      })
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
   }, [])
 
   // Merge this account's saved browsing history with anything viewed as a guest on this device.
@@ -49,9 +62,8 @@ export function AuthProvider({ children }) {
       return startSession(await authApi.resetPassword(payload))
     },
     async setPassword(password, confirmPassword) {
-      const updated = await authApi.setPassword(password, confirmPassword)
-      setUser(updated)
-      return updated
+      // Returns a fresh session: changing the password logs out the old one.
+      return startSession(await authApi.setPassword(password, confirmPassword))
     },
     async completeProfile(payload) {
       const updated = await authApi.completeProfile(payload)

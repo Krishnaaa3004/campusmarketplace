@@ -152,8 +152,9 @@ def test_protected_routes_blocked_until_password_set(client, legacy, mailbox):
 
     # Setting a password unlocks everything.
     res = client.post("/api/auth/set-password", json={"password": GOOD, "confirm_password": GOOD}, headers=h)
-    assert res.status_code == 200 and res.json()["has_password"] is True
-    assert client.get("/api/listings", headers=h).status_code == 200
+    assert res.status_code == 200 and res.json()["user"]["has_password"] is True
+    fresh = bearer(res)
+    assert client.get("/api/listings", headers=fresh).status_code == 200
     assert login(client, "legacy@campus.edu", GOOD).status_code == 200
 
 
@@ -223,3 +224,71 @@ def test_wrong_codes_burn_the_code(client, db_session, users, mailbox):
     # After too many guesses even the right code is refused.
     res = client.post("/api/auth/password/reset", json={**body, "otp": real})
     assert res.status_code == 400 and "Too many" in res.json()["detail"]
+
+
+
+# ---------- sessions ----------
+
+
+def _old_session(user):
+    """A session issued a minute ago, e.g. one an attacker stole earlier."""
+    from datetime import datetime, timedelta, timezone
+
+    import jwt
+
+    from app.core.config import settings
+
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {"sub": str(user.id), "iat": int((now - timedelta(minutes=1)).timestamp()), "exp": now + timedelta(days=1)},
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_password_reset_logs_out_older_sessions(client, users, mailbox):
+    stolen = _old_session(users["buyer"])
+    assert client.get("/api/users/me", headers=stolen).status_code == 200
+
+    client.post("/api/auth/password/forgot", json={"email": "buyer@campus.edu"})
+    res = client.post("/api/auth/password/reset", json={
+        "email": "buyer@campus.edu", "otp": mailbox["buyer@campus.edu"], "password": GOOD, "confirm_password": GOOD,
+    })
+    assert res.status_code == 200
+
+    gone = client.get("/api/users/me", headers=stolen)
+    assert gone.status_code == 401 and "Log in again" in gone.json()["detail"]
+    assert client.get("/api/users/me", headers=bearer(res)).status_code == 200  # the new session works
+
+
+def test_setting_first_password_returns_working_session(client, legacy):
+    old = _old_session(legacy)
+    res = client.post("/api/auth/set-password", json={"password": GOOD, "confirm_password": GOOD}, headers=old)
+    assert res.status_code == 200 and res.json()["token"]
+    assert client.get("/api/listings", headers=old).status_code == 401  # pre-change session is gone
+    assert client.get("/api/listings", headers=bearer(res)).status_code == 200
+
+
+def test_sessions_last_30_days_and_renew(client, users):
+    import jwt
+
+    from app.core.config import settings
+
+    res = login(client, "buyer@campus.edu", TEST_PASSWORD)
+    claims = jwt.decode(res.json()["token"], settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    assert claims["exp"] - claims["iat"] == 30 * 24 * 3600
+
+    renewed = client.post("/api/auth/refresh", headers=bearer(res))
+    assert renewed.status_code == 200 and renewed.json()["token"]
+    assert client.get("/api/users/me", headers=bearer(renewed)).status_code == 200
+    assert client.post("/api/auth/refresh").status_code in (401, 403)  # no session, nothing to renew
+
+
+def test_dead_session_cannot_renew(client, users, mailbox):
+    stolen = _old_session(users["buyer"])
+    client.post("/api/auth/password/forgot", json={"email": "buyer@campus.edu"})
+    client.post("/api/auth/password/reset", json={
+        "email": "buyer@campus.edu", "otp": mailbox["buyer@campus.edu"], "password": GOOD, "confirm_password": GOOD,
+    })
+    assert client.post("/api/auth/refresh", headers=stolen).status_code == 401
