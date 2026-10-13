@@ -213,6 +213,7 @@ export default function ResourceForm() {
             </select>
             {otherSubject && (
               <input
+                id="subject-other"
                 aria-label="Subject name"
                 className="field-input mt-2"
                 maxLength={60}

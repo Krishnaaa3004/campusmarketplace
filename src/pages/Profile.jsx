@@ -261,7 +261,7 @@ function AvatarEditor() {
           </svg>
         </span>
       </button>
-      <input ref={input} type="file" accept="image/*" className="hidden" onChange={onPick} />
+      <input ref={input} name="avatar" type="file" accept="image/*" className="hidden" onChange={onPick} />
       {user.avatar_url && (
         <button
           type="button"

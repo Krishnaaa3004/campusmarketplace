@@ -8,6 +8,7 @@ export default function SearchBar({ value, onChange, placeholder }) {
       </span>
       <input
         type="search"
+        name="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

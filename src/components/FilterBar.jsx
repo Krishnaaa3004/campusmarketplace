@@ -21,6 +21,7 @@ export function Select({ label, value, onChange, options }) {
   return (
     <select
       aria-label={label}
+      name={String(label).toLowerCase().replace(/\s+/g, '-')}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="rounded-[10px] border-[1.5px] border-line bg-paper px-3.5 py-2.5 text-[13.5px] focus:border-brand focus:outline-none"
