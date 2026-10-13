@@ -11,7 +11,7 @@ import LinkifiedText from '../components/LinkifiedText.jsx'
 import ResourcePreview from '../components/ResourcePreview.jsx'
 import Avatar from '../components/Avatar.jsx'
 import { formatPhone, formatPrice, timeAgo } from '../lib/format.js'
-import { recordContact } from '../hooks/useNotifications.js'
+import { openContact } from '../lib/contact.js'
 import { recordResourceView } from '../lib/recommendations.js'
 import { trackEvent } from '../lib/analytics.js'
 import ResourcePicks from '../components/ResourcePicks.jsx'
@@ -314,9 +314,29 @@ function AccessPanel({ r, access, onChange }) {
 }
 
 function OwnerCard({ r }) {
-  const { user } = useAuth()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
   const o = r.owner
-  const message = `Hi! I'm interested in "${r.title}" on CampusMarket's Resource Hub.`
+  const isOwn = r.access?.reason === 'owner'
+
+  // The owner's number/email isn't in the page; it's fetched only when a button is tapped.
+  async function contact(channel) {
+    setBusy(true)
+    try {
+      await openContact({
+        targetType: 'resource',
+        targetId: r.id,
+        channel,
+        subject: `CampusMarket: ${r.title}`,
+        message: `Hi! I'm interested in "${r.title}" on CampusMarket's Resource Hub.`,
+      })
+    } catch (err) {
+      toast(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="my-5 rounded-card border border-line bg-paper p-4">
       <div className="flex items-center gap-3.5">
@@ -327,30 +347,13 @@ function OwnerCard({ r }) {
         </div>
         {o.verified && <span className="ml-auto"><VerifiedBadge /></span>}
       </div>
-      {(o.phone || o.email) ? (
+      {!isOwn && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {o.phone && (
-            <a className="btn-ghost btn-sm" href={`https://wa.me/${o.phone}?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer"
-              onClick={() => recordContact(user, 'resource', r.id, 'whatsapp')}>
-              WhatsApp {formatPhone(o.phone)}
-            </a>
+          {o.has_phone && (
+            <button className="btn-ghost btn-sm" disabled={busy} onClick={() => contact('whatsapp')}>WhatsApp</button>
           )}
-          {o.email && (
-            <a
-              className="btn-ghost btn-sm"
-              href={`https://mail.google.com/mail/?${new URLSearchParams({ view: 'cm', fs: '1', to: o.email, su: `CampusMarket: ${r.title}`, body: message })}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => recordContact(user, 'resource', r.id, 'email')}
-            >
-              Email
-            </a>
-          )}
+          <button className="btn-ghost btn-sm" disabled={busy} onClick={() => contact('email')}>Email</button>
         </div>
-      ) : (
-        r.access?.reason === 'guest' || r.access?.reason === 'unverified'
-          ? <p className="mt-3 text-[12.5px] text-ink-faint">Log in as a verified student to see contact details.</p>
-          : null
       )}
     </div>
   )

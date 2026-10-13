@@ -1,21 +1,17 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.security import get_current_user
 from app.db.session import get_db
-from app.models.listing import Listing
 from app.models.notification import Notification
-from app.models.resource import Resource
 from app.models.user import User
-from app.schemas.notification import ContactIn, NotificationListOut, NotificationOut
+from app.schemas.notification import NotificationListOut, NotificationOut
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 LIST_LIMIT = 100
-# Tapping WhatsApp twice in a row shouldn't notify the owner twice.
-CONTACT_DEDUPE = timedelta(hours=1)
 
 
 def notify(
@@ -76,47 +72,4 @@ def mark_all_read(
     db.query(Notification).filter(
         Notification.user_id == user.id, Notification.read_at.is_(None)
     ).update({Notification.read_at: datetime.utcnow()}, synchronize_session=False)
-    db.commit()
-
-
-@router.post("/contact", status_code=204)
-def record_contact(
-    payload: ContactIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Called when a student taps WhatsApp / Email on a listing or resource."""
-    if not user.verified:
-        raise HTTPException(status_code=403, detail="Verify your college email first")
-
-    model = Listing if payload.target_type == "listing" else Resource
-    target = db.query(model).filter(model.id == payload.target_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    recent = (
-        db.query(Notification)
-        .filter(
-            Notification.actor_id == user.id,
-            Notification.type == "contact",
-            Notification.target_type == payload.target_type,
-            Notification.target_id == target.id,
-            Notification.channel == payload.channel,
-            Notification.created_at >= datetime.utcnow() - CONTACT_DEDUPE,
-        )
-        .first()
-    )
-    if recent:
-        return
-
-    notify(
-        db,
-        recipient_id=target.owner_id,
-        actor=user,
-        type="contact",
-        channel=payload.channel,
-        target_type=payload.target_type,
-        target_id=target.id,
-        target_title=target.title,
-    )
     db.commit()

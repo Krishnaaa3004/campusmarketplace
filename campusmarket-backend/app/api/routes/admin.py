@@ -137,7 +137,7 @@ def list_all_listings(
     if q and q.strip():
         query = query.filter(Listing.title.ilike(f"%{q.strip()}%"))
     items = query.order_by(Listing.created_at.desc()).all()
-    return AdminListingsOut(items=[ListingOut.from_orm_with_art(i) for i in items], total=len(items))
+    return AdminListingsOut(items=[ListingOut.from_orm_with_art(i, include_contact=True) for i in items], total=len(items))
 
 
 @router.delete("/listings/{listing_id}", status_code=204)

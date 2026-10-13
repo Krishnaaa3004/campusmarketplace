@@ -169,6 +169,7 @@ def _owner_out(u: User, with_contact: bool) -> OwnerOut:
         avatar_url=u.avatar_url,
         verified=bool(u.verified),
         campus=u.college,
+        has_phone=bool(u.phone),
         phone=u.phone if with_contact else None,
         email=u.email if with_contact else None,
     )
@@ -217,7 +218,6 @@ def _resource_out(
     signed_in = bool(viewer and viewer.verified)
     access = _access(r, viewer, db)
     out.access = access
-    out.owner = _owner_out(r.owner, with_contact=signed_in)
     out.upi_id = r.upi_id if signed_in else None
     if access.full:
         out.drive_url = r.drive_url

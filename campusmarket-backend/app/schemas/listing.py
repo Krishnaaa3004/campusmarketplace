@@ -29,8 +29,11 @@ class SellerOut(BaseModel):
     campus: str | None = None
     verified: bool
     avatar_url: str | None = None
-    phone: str | None = None  # shared so buyers can WhatsApp the seller
-    email: str | None = None  # shared so buyers can email the seller
+    # Phone and email are NOT included for students (they'd be easy to scrape from lists):
+    # Contact Seller asks POST /api/contact for one seller at a time. Admin views include them.
+    has_phone: bool = False
+    phone: str | None = None
+    email: str | None = None
 
     class Config:
         from_attributes = True
@@ -102,7 +105,7 @@ class ListingOut(BaseModel):
         from_attributes = True
 
     @classmethod
-    def from_orm_with_art(cls, listing):
+    def from_orm_with_art(cls, listing, include_contact: bool = False):
         art = CATEGORY_ART.get(listing.category, DEFAULT_ART)
         return cls(
             id=listing.id,
@@ -127,8 +130,9 @@ class ListingOut(BaseModel):
                 campus=listing.owner.college,
                 verified=listing.owner.verified,
                 avatar_url=listing.owner.avatar_url,
-                phone=listing.owner.phone,
-                email=listing.owner.email,
+                has_phone=bool(listing.owner.phone),
+                phone=listing.owner.phone if include_contact else None,
+                email=listing.owner.email if include_contact else None,
             ),
             art=Art(**art),
         )

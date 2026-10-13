@@ -1,4 +1,5 @@
-"""Email codes: domain checks, signup codes, and the one-time-code login for old accounts."""
+"""Signup codes and domain checks. Signup gives the same answer whether or not the email
+already has an account."""
 
 import pytest
 
@@ -7,11 +8,8 @@ from app.models.user import User
 
 
 @pytest.fixture(autouse=True)
-def no_email(monkeypatch):
-    sent = []
-    monkeypatch.setattr(auth_routes, "send_otp_email", lambda email, otp: sent.append(email))
+def domains(monkeypatch):
     monkeypatch.setattr(auth_routes.settings, "ALLOWED_EMAIL_DOMAINS", ["campus.edu"])
-    return sent
 
 
 def _user(db_session, email):
@@ -20,42 +18,44 @@ def _user(db_session, email):
     return db.query(User).filter(User.email == email).first()
 
 
-def test_signup_code_does_not_create_the_account(client, db_session, no_email):
+def test_signup_code_does_not_create_the_account(client, db_session, no_real_email):
     res = client.post("/api/auth/signup", json={"email": "new@campus.edu", "account_type": "seller"})
     assert res.status_code == 200
-    assert no_email == ["new@campus.edu"]
+    assert [(to, subject) for to, subject, _ in no_real_email] == [("new@campus.edu", "Your CampusMarket verification code")]
     assert _user(db_session, "new@campus.edu") is None  # created only after the code is verified
 
 
-def test_signup_refused_for_existing_account(client, users, no_email):
-    res = client.post("/api/auth/signup", json={"email": "buyer@campus.edu"})
-    assert res.status_code == 409 and "Log in" in res.json()["detail"]
-    assert no_email == []
+def test_signup_answers_the_same_for_existing_accounts(client, users, no_real_email):
+    new = client.post("/api/auth/signup", json={"email": "fresh@campus.edu"})
+    existing = client.post("/api/auth/signup", json={"email": "buyer@campus.edu"})
+    assert new.status_code == existing.status_code == 200
+    assert new.json() == existing.json()
+    # The existing account gets a heads-up email, never a code.
+    to, subject, body = no_real_email[-1]
+    assert to == "buyer@campus.edu" and "already have" in subject
+    assert not any(ch.isdigit() for ch in body.split("CampusMarket")[0])
 
 
-def test_login_code_for_unknown_email_creates_nothing(client, db_session, no_email):
-    res = client.post("/api/auth/login-code", json={"email": "stranger@campus.edu"})
-    assert res.status_code == 404
-    assert "Sign up first" in res.json()["detail"]
-    assert _user(db_session, "stranger@campus.edu") is None
-    assert no_email == []
+def test_signup_verify_for_existing_account_looks_like_a_bad_code(client, users):
+    res = client.post("/api/auth/signup/verify", json={
+        "email": "buyer@campus.edu", "otp": "123456", "password": "abc12345", "confirm_password": "abc12345",
+    })
+    assert res.status_code == 400 and res.json()["detail"] == "Code expired, request a new one"
 
 
-def test_login_code_only_for_accounts_without_password(client, users, no_email):
-    # buyer has a password -> must use it (or Forgot password)
-    res = client.post("/api/auth/login-code", json={"email": "buyer@campus.edu"})
-    assert res.status_code == 400 and "password" in res.json()["detail"]
-    assert no_email == []
+def test_code_login_endpoints_are_gone(client):
+    assert client.post("/api/auth/login-code", json={"email": "buyer@campus.edu"}).status_code in (404, 405)
+    assert client.post("/api/auth/login/otp", json={"email": "buyer@campus.edu", "otp": "1"}).status_code in (404, 405)
 
 
-def test_login_code_checks_domain(client):
-    assert client.post("/api/auth/login-code", json={"email": "x@gmail.com"}).status_code == 400
+def test_domain_check(client):
+    assert client.post("/api/auth/signup", json={"email": "x@gmail.com"}).status_code == 400
+    assert client.post("/api/auth/password/forgot", json={"email": "x@gmail.com"}).status_code == 400
 
 
-def test_owner_can_use_a_personal_email(client, monkeypatch, no_email):
+def test_owner_can_use_a_personal_email(client, monkeypatch, no_real_email):
     monkeypatch.setattr(auth_routes.settings, "OWNER_EMAILS", ["Boss@Gmail.com"])
     assert client.post("/api/auth/signup", json={"email": "boss@gmail.com", "account_type": "seller"}).status_code == 200
-    assert client.post("/api/auth/password/forgot", json={"email": "boss@gmail.com"}).status_code == 200
+    assert no_real_email[-1][0] == "boss@gmail.com"
     # Any other personal address is still refused.
     assert client.post("/api/auth/signup", json={"email": "someone@gmail.com"}).status_code == 400
-    assert client.post("/api/auth/login-code", json={"email": "someone@gmail.com"}).status_code == 400

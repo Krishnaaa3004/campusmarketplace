@@ -9,6 +9,7 @@ import EmptyState from '../components/EmptyState.jsx'
 import Avatar from '../components/Avatar.jsx'
 import { useRequestNotifications } from '../hooks/useRequestNotifications.js'
 import { useNotifications } from '../hooks/useNotifications.js'
+import { openContact } from '../lib/contact.js'
 import { formatPrice, isExpired, titleCase, timeAgo } from '../lib/format.js'
 
 const TABS = [
@@ -278,12 +279,27 @@ function BuyerRequests() {
 
 function RequestRow({ r, fresh }) {
   const { requester } = r
-  const greeting = `Hi ${requester.name}! I saw your request for "${r.product}" on CampusMarket. I might have it.`
-  const reply = requester.phone
-    ? `https://wa.me/${requester.phone}?text=${encodeURIComponent(greeting)}`
-    : `https://mail.google.com/mail/?${new URLSearchParams({
-        view: 'cm', fs: '1', to: requester.email, su: `CampusMarket — ${r.product}`, body: greeting,
-      })}`
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const channel = requester.has_phone ? 'whatsapp' : 'email'
+
+  // The requester's number/email isn't in the feed; it's fetched only when Reply is tapped.
+  async function reply() {
+    setBusy(true)
+    try {
+      await openContact({
+        targetType: 'request',
+        targetId: r.id,
+        channel,
+        subject: `CampusMarket — ${r.product}`,
+        message: `Hi ${requester.name}! I saw your request for "${r.product}" on CampusMarket. I might have it.`,
+      })
+    } catch (err) {
+      toast(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className={`mb-2.5 flex items-start gap-3.5 rounded-card border p-3.5 ${fresh ? 'border-brand/30 bg-brand-tint/50' : 'border-line'}`}>
@@ -297,9 +313,9 @@ function RequestRow({ r, fresh }) {
         <p className="mt-0.5 break-words text-[15px] font-semibold">{r.product}</p>
         {r.description && <p className="mt-0.5 break-words text-[13.5px] text-ink-soft">{r.description}</p>}
       </div>
-      <a className="btn-ghost btn-sm flex-none" href={reply} target="_blank" rel="noopener noreferrer">
-        {requester.phone ? 'Reply on WhatsApp' : 'Reply by Email'}
-      </a>
+      <button className="btn-ghost btn-sm flex-none" disabled={busy} onClick={reply}>
+        {requester.has_phone ? 'Reply on WhatsApp' : 'Reply by Email'}
+      </button>
     </div>
   )
 }

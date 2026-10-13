@@ -153,12 +153,13 @@ All paths are under `/api`. In this table, *seller* means `account_type = "selle
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/auth/signup` | – | `{ email, account_type }`: checks the domain and emails a 6-digit code. Creates nothing yet |
-| POST | `/auth/signup/verify` | – | `{ email, otp, account_type, password, confirm_password }` → `{ token, user }`: creates the verified account |
-| POST | `/auth/login` | – | `{ email, password }` → `{ token, user }`. Generic "Invalid email or password"; 5 failures lock the account for 15 min, plus a per-IP limit. `403 { code: "password_not_set" }` for accounts from before passwords |
-| POST | `/auth/login-code`, `/auth/login/otp` | – | One-time code login, **only** for accounts without a password (who must then set one) |
+| POST | `/auth/signup` | – | `{ email, account_type }`: emails a 6-digit code (or, for an existing account, an "you already have an account" notice). Same answer either way. Creates nothing yet |
+| POST | `/auth/signup/verify` | – | `{ email, otp, account_type, password, confirm_password }` → `{ user }` + cookie: creates the verified account |
+| POST | `/auth/login` | – | `{ email, password }` → `{ user }` + **HttpOnly session cookie** (no token in the body). One "Invalid email or password" for every failure; 5 failures lock for 15 min (unknown emails too), plus a per-IP limit |
+| POST | `/auth/refresh`, `/auth/logout` | user / – | Renew the 30-day session cookie (the app does this on every visit) / clear it |
 | POST | `/auth/set-password` | user | `{ password, confirm_password }`: first password only (409 if one exists). Until it's set, every other endpoint except `GET /users/me` returns `403 { code: "password_required" }` |
-| POST | `/auth/password/forgot`, `/auth/password/reset` | – | Email a reset code (same answer whether or not the account exists), then `{ email, otp, password, confirm_password }` → `{ token, user }` |
+| POST | `/auth/password/forgot`, `/auth/password/reset` | – | Email a reset code (same answer whether or not the account exists), then `{ email, otp, password, confirm_password }` → `{ user }` + cookie. Also how accounts from before passwords create their first one |
+| POST | `/contact` | verified user | `{ target_type: listing \| resource \| request, target_id, channel: whatsapp \| email }` → that one person's phone or email. Contact details are never in lists or pages; reveals are logged and limited (15/hour, 40/day per student) |
 | POST | `/auth/profile`, `/auth/interests`, `/auth/account-type` | user | Onboarding, interests, buyer → seller upgrade |
 | GET / PATCH | `/users/me` | user | |
 | POST / DELETE | `/users/me/avatar` | user | Multipart, field `file` |
@@ -189,7 +190,7 @@ All paths are under `/api`. In this table, *seller* means `account_type = "selle
 | DELETE | `/admin/listings/{id}` | admin | Moderation (resources: `DELETE /resources/{id}`, which admins may call) |
 | GET | `/notifications` | user | Your notifications → `{ items, unread }`: access requests on your resources, and WhatsApp / Email taps on your items |
 | POST | `/notifications/read-all` | user | |
-| POST | `/notifications/contact` | verified user | `{ target_type, target_id, channel }`: sent when a student taps WhatsApp / Email; repeat taps within 1 hour are ignored |
+| POST | `/contact` | verified user | `{ target_type, target_id, channel }`: sent when a student taps WhatsApp / Email; repeat taps within 1 hour are ignored |
 
 **Mock-only so far:** campuses exist in `mockApi.js` but have no backend routes yet.
 

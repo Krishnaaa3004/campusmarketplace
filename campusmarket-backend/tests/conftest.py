@@ -13,6 +13,7 @@ os.environ.update(
     SMTP_USERNAME="test",
     SMTP_PASSWORD="test",
     SMTP_FROM="test@example.com",
+    ENVIRONMENT="test",  # session cookie without the Secure flag (tests use http://testserver)
 )
 
 import pymupdf
@@ -35,6 +36,8 @@ from app.models.listing import Listing
 from app.models.notification import Notification
 from app.models.otp import OTPCode
 from app.models.report import Report
+from app.models.contact_reveal import ContactReveal
+from app.models.product_request import ProductRequest
 from app.models.resource import Resource, ResourceAccess
 from app.models.user import User
 
@@ -51,7 +54,8 @@ sqlite3.register_adapter(list, json.dumps)
 @pytest.fixture
 def db_session():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[User.__table__, Listing.__table__, Resource.__table__, ResourceAccess.__table__, Notification.__table__, OTPCode.__table__, Report.__table__])
+    Base.metadata.create_all(engine, tables=[User.__table__, Listing.__table__, Resource.__table__, ResourceAccess.__table__, Notification.__table__, OTPCode.__table__, Report.__table__,
+        ContactReveal.__table__, ProductRequest.__table__])
     Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = Session()
     yield session, Session
@@ -81,6 +85,7 @@ def client(db_session, file_dirs):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
+        c.headers["X-Requested-With"] = "CampusMarket"  # the app's CSRF header, like the real frontend
         yield c
     app.dependency_overrides.clear()
 
@@ -91,12 +96,23 @@ TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
 
 
 @pytest.fixture(autouse=True)
+def no_real_email(monkeypatch):
+    """Tests never send real email; everything that would go out is recorded here."""
+    from app.core import email as email_module
+
+    outbox = []
+    monkeypatch.setattr(email_module, "_deliver", lambda to, subject, body: outbox.append((to, subject, body)))
+    return outbox
+
+
+@pytest.fixture(autouse=True)
 def reset_login_limiter():
     from app.api.routes import auth as auth_routes
 
     auth_routes._login_ip_limiter.reset()
     auth_routes._code_email_limiter.reset()
     auth_routes._code_ip_limiter.reset()
+    auth_routes._unknown_email_failures.reset()
     yield
 
 

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,6 @@ from app.core.config import settings
 from app.db.session import get_db  # <-- point this at your existing db session dependency
 from app.models.user import User
 
-bearer_scheme = HTTPBearer()
 optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -69,13 +68,41 @@ def decode_access_token(token: str) -> tuple[uuid.UUID, int]:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+def session_token(request: Request, credentials: HTTPAuthorizationCredentials | None) -> str | None:
+    """The browser sends the session as an HttpOnly cookie. A Bearer header is still accepted
+    for tests, scripts and moving old browser-stored sessions into the cookie."""
+    if credentials:
+        return credentials.credentials
+    return request.cookies.get(settings.SESSION_COOKIE_NAME)
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        settings.SESSION_COOKIE_NAME,
+        token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=True,  # page scripts can't read it
+        secure=settings.ENVIRONMENT.lower() not in ("development", "test"),
+        samesite="lax",  # not sent on cross-site form posts or background requests
+        path="/api",
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(settings.SESSION_COOKIE_NAME, path="/api")
+
+
 def get_current_user_any(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """Any logged-in user, including accounts that still have to create a password.
-    Only GET /users/me and POST /auth/set-password use this directly."""
-    user_id, issued_at = decode_access_token(credentials.credentials)
+    Only GET /users/me, POST /auth/set-password and session renewal use this directly."""
+    token = session_token(request, credentials)
+    if not token:
+        raise HTTPException(status_code=401, detail="Log in to continue")
+    user_id, issued_at = decode_access_token(token)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -105,15 +132,17 @@ def get_current_user(user: User = Depends(get_current_user_any)) -> User:
 
 
 def get_optional_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User | None:
     """Like get_current_user, but guests (no or bad token) get None instead of a 401.
     Accounts that still need to create a password are treated as guests too."""
-    if not credentials:
+    token = session_token(request, credentials)
+    if not token:
         return None
     try:
-        user_id, issued_at = decode_access_token(credentials.credentials)
+        user_id, issued_at = decode_access_token(token)
     except HTTPException:
         return None
     user = db.query(User).filter(User.id == user_id).first()

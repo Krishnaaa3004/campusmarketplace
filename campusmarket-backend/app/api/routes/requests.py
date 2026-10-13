@@ -37,7 +37,7 @@ def create_request(
     db.add(req)
     db.commit()
     db.refresh(req)
-    return ProductRequestOut.from_model(req)
+    return ProductRequestOut.from_model(req, include_contact=True)  # your own request
 
 
 @router.get("", response_model=list[ProductRequestOut])
@@ -71,7 +71,7 @@ def my_requests(
         .order_by(ProductRequest.created_at.desc())
         .all()
     )
-    return [ProductRequestOut.from_model(r) for r in rows]
+    return [ProductRequestOut.from_model(r, include_contact=True) for r in rows]
 
 
 @router.delete("/{request_id}", status_code=204)

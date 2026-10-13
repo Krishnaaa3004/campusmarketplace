@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Sessions are renewed each time the app opens (POST /auth/refresh), so people who use the
     # site at least once a month stay logged in. Changing the password still ends old sessions.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
+    # The session lives in an HttpOnly cookie (page scripts can't read it, so it can't be stolen
+    # by injected JavaScript). Secure everywhere except local development over http.
+    SESSION_COOKIE_NAME: str = "cm_session"
+    CSRF_HEADER: str = "X-Requested-With"  # every state-changing request must send it (see main.py)
+    CSRF_HEADER_VALUE: str = "CampusMarket"
 
     # --- OTP ---
     OTP_EXPIRE_MINUTES: int = 10
@@ -28,6 +33,10 @@ class Settings(BaseSettings):
     LOGIN_LOCK_MINUTES: int = 15
     LOGIN_IP_LIMIT: int = 20  # password attempts per IP address...
     LOGIN_IP_WINDOW_MINUTES: int = 15  # ...within this window
+
+    # --- Contact details (phone/email) shown one person at a time, per student ---
+    CONTACT_REVEALS_PER_HOUR: int = 15
+    CONTACT_REVEALS_PER_DAY: int = 40
 
     # --- Code emails (signup / login code / password reset) ---
     CODE_EMAIL_COOLDOWN_SECONDS: int = 60  # one code per address per minute

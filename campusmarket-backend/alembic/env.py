@@ -27,6 +27,7 @@ from app.models.product_request import ProductRequest
 from app.models.resource import Resource, ResourceAccess
 from app.models.notification import Notification
 from app.models.report import Report
+from app.models.contact_reveal import ContactReveal
 
 target_metadata = Base.metadata
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

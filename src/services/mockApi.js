@@ -474,17 +474,30 @@ export function markNotificationsRead() {
   return delay(null, 100)
 }
 
-export function recordContact(targetType, targetId, channel) {
+// Mirrors POST /api/contact: one person's WhatsApp or email, fetched when a button is tapped.
+export function revealContact(targetType, targetId, channel) {
   const u = mockViewer()
-  if (!u) return Promise.resolve(null)
-  const target = targetType === 'listing'
-    ? listings.find((l) => l.id === Number(targetId))
-    : resources.find((r) => r.id === Number(targetId))
-  if (target) {
-    const ownerId = targetType === 'listing' ? target.seller.id : target.owner.id
-    pushNotification({ user_id: ownerId, actor: u, type: 'contact', channel, target_type: targetType, target_id: target.id, target_title: target.title })
+  if (!u) return Promise.reject(mockError('Log in to continue', 401))
+  let owner
+  let title
+  if (targetType === 'request') {
+    const req = productRequests.find((r) => r.id === Number(targetId))
+    owner = req?.requester
+    title = req?.product
+  } else {
+    const target = targetType === 'listing'
+      ? listings.find((l) => l.id === Number(targetId))
+      : resources.find((r) => r.id === Number(targetId))
+    owner = target && (targetType === 'listing' ? target.seller : target.owner)
+    title = target?.title
   }
-  return delay(null, 100)
+  if (!owner) return Promise.reject(mockError('That item no longer exists', 404))
+  const phone = owner.phone || (sameId(owner.id, u.id) ? u.phone : null) || '919000000000'
+  const email = owner.email || `${String(owner.name || 'student').split(' ')[0].toLowerCase()}@polaris.edu`
+  if (targetType !== 'request') {
+    pushNotification({ user_id: owner.id, actor: u, type: 'contact', channel, target_type: targetType, target_id: Number(targetId), target_title: title })
+  }
+  return delay({ name: owner.name, phone: channel === 'whatsapp' ? phone : null, email: channel === 'email' ? email : null }, 150)
 }
 
 // Mirrors POST /api/reports: one report per person per item, seller notified anonymously.
@@ -527,8 +540,10 @@ export function setReportStatus(id, status) {
 }
 
 // ---------- Auth (mirrors /api/auth: password login, code fallback, set/reset password) ----------
-// aashi@polaris.edu / campus123 is the main sample account. legacy@polaris.edu has no password.
-// Codes: any 6 digits work in mock mode.
+// aashi@polaris.edu / campus123 is the main sample account. legacy@polaris.edu has no password:
+// log in fails (like any wrong password), so use Forgot password to create one. Or, to see the
+// mandatory "Create a password" step, set localStorage cm_token to "mock-token:legacy@polaris.edu"
+// and reload (a session from before passwords existed). Codes: any 6 digits work in mock mode.
 
 function mockError(message, status, detail) {
   return Object.assign(new Error(message), { status, detail: detail ?? message })
@@ -574,20 +589,20 @@ function syncCurrentAccount() {
   if (acc) acc.profile = { ...seed.currentUser }
 }
 
+// Same answer whether or not the account exists (the real API emails existing accounts a notice).
 export function signup(email, accountType = 'buyer') {
   try {
     checkCampusEmail(email)
-    if (mockAccounts[email]) throw mockError('An account with this email already exists. Log in instead.', 409)
   } catch (err) {
     return Promise.reject(err)
   }
-  return delay({ message: 'OTP sent' })
+  return delay({ message: 'Check your inbox for a 6-digit code.' })
 }
 
 export function signupVerify({ email, otp, account_type, password, confirm_password }) {
   try {
     checkCampusEmail(email)
-    if (mockAccounts[email]) throw mockError('An account with this email already exists. Log in instead.', 409)
+    if (mockAccounts[email]) throw mockError('Code expired, request a new one', 400)
     checkNewPassword(password, confirm_password)
     checkCode(otp)
   } catch (err) {
@@ -604,40 +619,16 @@ export function signupVerify({ email, otp, account_type, password, confirm_passw
   return delay(becomeAccount(email), 400)
 }
 
+// One message for every failure, like the real API.
 export function login(email, password) {
   const acc = mockAccounts[email]
-  if (!acc) return Promise.reject(mockError('Invalid email or password', 401))
-  if (!acc.password) {
-    return Promise.reject(mockError("You haven't set a password yet. We'll email you a code to log in.", 403, {
-      code: 'password_not_set', message: "You haven't set a password yet. We'll email you a code to log in.",
-    }))
-  }
-  if (acc.password !== password) return Promise.reject(mockError('Invalid email or password', 401))
+  if (!acc || !acc.password || acc.password !== password) return Promise.reject(mockError('Invalid email or password', 401))
   return delay(becomeAccount(email), 400)
 }
 
-export function requestLoginCode(email) {
-  try {
-    checkCampusEmail(email)
-    const acc = mockAccounts[email]
-    if (!acc) throw mockError('No account with this email yet. Sign up first.', 404)
-    if (acc.password) throw mockError('This account has a password. Log in with it, or use Forgot password.', 400)
-  } catch (err) {
-    return Promise.reject(err)
-  }
-  return delay({ message: 'OTP sent' })
-}
-
-export function loginWithCode(email, otp) {
-  try {
-    const acc = mockAccounts[email]
-    if (!acc) throw mockError('Code expired, request a new one', 400)
-    if (acc.password) throw mockError('This account has a password. Log in with it, or use Forgot password.', 400)
-    checkCode(otp)
-  } catch (err) {
-    return Promise.reject(err)
-  }
-  return delay(becomeAccount(email), 400)
+export function logout() {
+  localStorage.removeItem('cm_token')
+  return delay(null, 50)
 }
 
 export function setPassword(password, confirm) {

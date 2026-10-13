@@ -29,7 +29,10 @@ class RequesterOut(BaseModel):
     id: str
     name: str
     avatar_url: str | None = None
-    email: str
+    has_phone: bool = False
+    # Not included in the sellers' feed (it would be easy to scrape); replying goes through
+    # POST /api/contact. Your own requests include them.
+    email: str | None = None
     phone: str | None = None
 
 
@@ -41,7 +44,7 @@ class ProductRequestOut(BaseModel):
     requester: RequesterOut
 
     @classmethod
-    def from_model(cls, r) -> "ProductRequestOut":
+    def from_model(cls, r, include_contact: bool = False) -> "ProductRequestOut":
         return cls(
             id=r.id,
             product=r.product,
@@ -51,7 +54,8 @@ class ProductRequestOut(BaseModel):
                 id=str(r.user.id),
                 name=r.user.name or r.user.email.split("@")[0],
                 avatar_url=r.user.avatar_url,
-                email=r.user.email,
-                phone=r.user.phone,
+                has_phone=bool(r.user.phone),
+                email=r.user.email if include_contact else None,
+                phone=r.user.phone if include_contact else None,
             ),
         )

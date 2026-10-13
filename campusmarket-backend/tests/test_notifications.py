@@ -64,7 +64,7 @@ def test_rejected_request_does_not_notify(client, auth, resource_id):
 
 def test_mark_all_read(client, auth, resource_id):
     client.post(f"/api/resources/{resource_id}/access", json={}, headers=auth("buyer"))
-    client.post("/api/notifications/contact", json={"target_type": "resource", "target_id": resource_id, "channel": "email"}, headers=auth("other"))
+    client.post("/api/contact", json={"target_type": "resource", "target_id": resource_id, "channel": "email"}, headers=auth("other"))
     assert _notes(client, auth, "owner")["unread"] == 2
 
     assert client.post("/api/notifications/read-all", headers=auth("owner")).status_code == 204
@@ -78,25 +78,20 @@ def test_contact_tap_notifies_owner_once_per_channel(client, auth, resource_id, 
     tid = resource_id if target == "resource" else listing_id
     body = {"target_type": target, "target_id": tid, "channel": "whatsapp"}
 
-    assert client.post("/api/notifications/contact", json=body, headers=auth("buyer")).status_code == 204
+    assert client.post("/api/contact", json=body, headers=auth("buyer")).status_code == 200
     # Tapping again within the hour doesn't spam the owner...
-    assert client.post("/api/notifications/contact", json=body, headers=auth("buyer")).status_code == 204
+    assert client.post("/api/contact", json=body, headers=auth("buyer")).status_code == 200
     # ...but switching to email is a separate event.
-    client.post("/api/notifications/contact", json={**body, "channel": "email"}, headers=auth("buyer"))
+    client.post("/api/contact", json={**body, "channel": "email"}, headers=auth("buyer"))
 
     items = _notes(client, auth, "owner")["items"]
     assert sorted(n["channel"] for n in items) == ["email", "whatsapp"]
     assert all(n["type"] == "contact" and n["target_type"] == target and n["target_id"] == tid for n in items)
 
 
-def test_contact_rules(client, auth, resource_id):
+def test_contacting_yourself_does_not_notify(client, auth, resource_id):
     body = {"target_type": "resource", "target_id": resource_id, "channel": "whatsapp"}
-    assert client.post("/api/notifications/contact", json=body).status_code in (401, 403)
-    assert client.post("/api/notifications/contact", json=body, headers=auth("unverified")).status_code == 403
-    assert client.post("/api/notifications/contact", json={**body, "target_id": 9999}, headers=auth("buyer")).status_code == 404
-    assert client.post("/api/notifications/contact", json={**body, "channel": "sms"}, headers=auth("buyer")).status_code == 422
-    # Contacting yourself never creates a notification.
-    assert client.post("/api/notifications/contact", json=body, headers=auth("owner")).status_code == 204
+    assert client.post("/api/contact", json=body, headers=auth("owner")).status_code == 200
     assert _notes(client, auth, "owner")["items"] == []
 
 

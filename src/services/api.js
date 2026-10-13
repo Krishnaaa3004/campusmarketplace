@@ -8,6 +8,7 @@ import { http } from './client.js'
 import * as mock from './mockApi.js'
 
 const USE_MOCK = (import.meta.env.VITE_DATA_SOURCE || 'mock') === 'mock'
+export const IS_MOCK = USE_MOCK
 
 function pick(live, mocked) {
   return USE_MOCK ? mocked : live
@@ -113,20 +114,15 @@ export const authApi = {
   // POST /api/auth/signup  body: { email, account_type }  -> emails a code (nothing is created yet)
   signup: (email, accountType = 'buyer') =>
     pick(() => http.post('/auth/signup', { email, account_type: accountType }), () => mock.signup(email, accountType))(),
-  // POST /api/auth/signup/verify  body: { email, otp, account_type, password, confirm_password } -> { token, user }
+  // POST /api/auth/signup/verify  body: { email, otp, account_type, password, confirm_password } -> { user } + cookie
   signupVerify: (payload) =>
     pick(() => http.post('/auth/signup/verify', payload), () => mock.signupVerify(payload))(),
-  // POST /api/auth/login  body: { email, password } -> { token, user }
-  //   403 { detail: { code: "password_not_set" } } for accounts from before passwords -> use the code flow
+  // POST /api/auth/login  body: { email, password } -> { user } + HttpOnly session cookie.
+  //   Same "Invalid email or password" for every failure (accounts without a password included:
+  //   they use Forgot password to create their first one).
   login: (email, password) =>
     pick(() => http.post('/auth/login', { email, password }), () => mock.login(email, password))(),
-  // POST /api/auth/login-code  body: { email }  -> one-time code, only for accounts without a password
-  requestLoginCode: (email) =>
-    pick(() => http.post('/auth/login-code', { email }), () => mock.requestLoginCode(email))(),
-  // POST /api/auth/login/otp  body: { email, otp } -> { token, user }  (then a password must be created)
-  loginWithCode: (email, otp) =>
-    pick(() => http.post('/auth/login/otp', { email, otp }), () => mock.loginWithCode(email, otp))(),
-  // POST /api/auth/set-password  body: { password, confirm_password } -> { token, user }  (only when none is set yet)
+  // POST /api/auth/set-password  body: { password, confirm_password } -> { user } + fresh cookie (only when none is set yet)
   setPassword: (password, confirmPassword) =>
     pick(
       () => http.post('/auth/set-password', { password, confirm_password: confirmPassword }),
@@ -135,7 +131,7 @@ export const authApi = {
   // POST /api/auth/password/forgot  body: { email }  -> emails a reset code (same answer either way)
   forgotPassword: (email) =>
     pick(() => http.post('/auth/password/forgot', { email }), () => mock.forgotPassword(email))(),
-  // POST /api/auth/password/reset  body: { email, otp, password, confirm_password } -> { token, user }
+  // POST /api/auth/password/reset  body: { email, otp, password, confirm_password } -> { user } + cookie
   resetPassword: (payload) =>
     pick(() => http.post('/auth/password/reset', payload), () => mock.resetPassword(payload))(),
   // POST /api/auth/profile — completes onboarding (name, college, course, year)
@@ -159,14 +155,16 @@ export const authApi = {
   removeAvatar: () => pick(() => http.del('/users/me/avatar'), () => mock.removeAvatar())(),
   // POST /api/users/me/views  body: { views: [{ kind: "listing" | "resource", key }] }  (recommendation history)
   recordViews: (views) => pick(() => http.post('/users/me/views', { views }), () => mock.recordViews(views))(),
-  // POST /api/auth/refresh -> { token, user }: renews a valid session for another 30 days
+  // POST /api/auth/refresh -> { user } + cookie: renews a valid session for another 30 days
   refreshSession: () => pick(() => http.post('/auth/refresh'), () => mock.refreshSession())(),
+  // Older versions kept the session in browser storage; swap it for the HttpOnly cookie once.
+  migrateStoredSession: (token) =>
+    pick(() => http.post('/auth/refresh', undefined, { headers: { Authorization: `Bearer ${token}` } }), () => mock.refreshSession())(),
   // GET /api/users/me
   me: () => pick(() => http.get('/users/me'), () => mock.me())(),
-  logout: () => {
-    localStorage.removeItem('cm_token')
-    return Promise.resolve()
-  },
+  // POST /api/auth/logout: clears the session cookie
+  logout: () => pick(() => http.post('/auth/logout'), () => mock.logout())(),
+
 }
 
 export const requestsApi = {
@@ -185,11 +183,15 @@ export const notificationsApi = {
   list: () => pick(() => http.get('/notifications'), () => mock.listNotifications())(),
   // POST /api/notifications/read-all
   markAllRead: () => pick(() => http.post('/notifications/read-all'), () => mock.markNotificationsRead())(),
-  // POST /api/notifications/contact  body: { target_type: "listing" | "resource", target_id, channel: "whatsapp" | "email" }
-  contact: (targetType, targetId, channel) =>
+}
+
+export const contactApi = {
+  // POST /api/contact  body: { target_type: "listing" | "resource" | "request", target_id, channel }
+  //   -> { name, phone | email }  ONE person's contact, logged + rate-limited (never in page data)
+  reveal: (targetType, targetId, channel) =>
     pick(
-      () => http.post('/notifications/contact', { target_type: targetType, target_id: targetId, channel }),
-      () => mock.recordContact(targetType, targetId, channel)
+      () => http.post('/contact', { target_type: targetType, target_id: targetId, channel }),
+      () => mock.revealContact(targetType, targetId, channel)
     )(),
 }
 

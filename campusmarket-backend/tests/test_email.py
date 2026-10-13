@@ -8,6 +8,15 @@ import pytest
 from app.core import email as email_module
 from app.core.email import EmailError, send_otp_email
 
+# These tests check the real sending code against fake Brevo/SMTP servers, so they use the
+# real _deliver instead of the suite-wide "no real email" stub.
+_REAL_DELIVER = email_module._deliver
+
+
+@pytest.fixture(autouse=True)
+def real_delivery(no_real_email, monkeypatch):
+    monkeypatch.setattr(email_module, "_deliver", _REAL_DELIVER)
+
 
 @pytest.fixture
 def settings(monkeypatch):
@@ -70,7 +79,9 @@ def test_smtp_auth_failure_raises(settings, monkeypatch):
         send_otp_email("student@campus.edu", "123456")
 
 
-def test_signup_returns_readable_502_when_email_fails(client, monkeypatch):
+def test_signup_email_failure_is_logged_not_leaked(client, monkeypatch, caplog):
+    """Signup emails go out after the response (so timing can't reveal accounts); a failure
+    is logged for us, and the student simply asks for another code."""
     from app.api.routes import auth as auth_routes
 
     monkeypatch.setattr(auth_routes.settings, "ALLOWED_EMAIL_DOMAINS", ["campus.edu"])
@@ -80,5 +91,5 @@ def test_signup_returns_readable_502_when_email_fails(client, monkeypatch):
 
     monkeypatch.setattr(auth_routes, "send_otp_email", fail)
     res = client.post("/api/auth/signup", json={"email": "new@campus.edu", "account_type": "buyer"})
-    assert res.status_code == 502
-    assert "couldn't send the code" in res.json()["detail"]
+    assert res.status_code == 200
+    assert "SMTP blocked" in caplog.text

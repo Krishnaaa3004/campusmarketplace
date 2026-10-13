@@ -71,9 +71,25 @@ def _send_smtp(to_email: str, subject: str, body: str) -> None:
         raise EmailError(f"SMTP send via {settings.SMTP_HOST}:{settings.SMTP_PORT} failed: {e!r}") from e
 
 
-def send_otp_email(to_email: str, otp: str) -> None:
-    subject, body = _content(otp)
+def _deliver(to_email: str, subject: str, body: str) -> None:
     if settings.BREVO_API_KEY:
         _send_brevo(to_email, subject, body)
     else:
         _send_smtp(to_email, subject, body)
+
+
+def send_otp_email(to_email: str, otp: str) -> None:
+    _deliver(to_email, *_content(otp))
+
+
+def send_account_exists_email(to_email: str) -> None:
+    """Sent instead of a signup code when the email already has an account, so the signup
+    form gives the same answer either way (nobody can probe which emails are registered)."""
+    _deliver(
+        to_email,
+        "You already have a CampusMarket account",
+        "Someone (hopefully you) just tried to sign up to CampusMarket with this email.\n\n"
+        "You already have an account, so just log in. If you don't remember your password, "
+        "use \"Forgot password?\" on the login page.\n\n"
+        "If this wasn't you, you can ignore this email.",
+    )

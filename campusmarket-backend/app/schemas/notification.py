@@ -1,13 +1,6 @@
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel
-
-
-class ContactIn(BaseModel):
-    target_type: Literal["listing", "resource"]
-    target_id: int
-    channel: Literal["whatsapp", "email"]
 
 
 class ActorOut(BaseModel):

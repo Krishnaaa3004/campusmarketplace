@@ -101,7 +101,7 @@ automatically on your first upload.
    | Name | Value |
    |---|---|
    | `VITE_DATA_SOURCE` | `live` |
-   | `VITE_API_BASE_URL` | `https://campusmarket-api.onrender.com/api` (your Render address + `/api`) |
+   | `VITE_API_BASE_URL` | `/api` (vercel.json forwards `/api` to Render, so the login cookie stays on your own site) |
 
 4. **Deploy**. You'll get an address like `https://campusmarketplace.vercel.app`.
 5. In **Settings → Git**, check that **Production Branch** is `main`.

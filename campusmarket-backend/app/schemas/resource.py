@@ -168,7 +168,8 @@ class OwnerOut(BaseModel):
     avatar_url: str | None = None
     verified: bool
     campus: str | None = None
-    # Only sent to logged-in, verified viewers.
+    has_phone: bool = False
+    # Only in admin views and access-request lists; students use POST /api/contact.
     phone: str | None = None
     email: str | None = None
 

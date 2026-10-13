@@ -48,15 +48,16 @@ def test_unverified_users_cannot_see_the_resource_hub(client, auth, paid_pdf):
         assert client.get(path, headers=auth("unverified")).status_code == 403, path
 
 
-def test_verified_buyer_is_locked_but_sees_contact(client, auth, paid_pdf):
+def test_verified_buyer_is_locked_and_contact_is_not_in_the_page(client, auth, paid_pdf):
     rid, _ = paid_pdf
     r = _detail(client, rid, auth("buyer"))
     assert r["access"]["full"] is False
     assert r["access"]["reason"] == "locked"
     assert r["access"]["can_request"] is True
     assert r["file_url"] is None
-    assert r["owner"]["phone"] == "919876543210"
-    assert r["owner"]["email"] == "owner@campus.edu"
+    # Contact details are fetched one at a time via POST /api/contact, never in the page data.
+    assert r["owner"]["phone"] is None and r["owner"]["email"] is None
+    assert r["owner"]["has_phone"] is True
     assert r["upi_id"] == "owner@okbank"
     assert r["pending_requests"] is None
     assert _file(client, rid, auth("buyer")).status_code == 403

@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from app.api.routes.admin import router as admin_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.contact import router as contact_router
 from app.api.routes.listings import router as listings_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.reports import router as reports_router
@@ -29,6 +30,25 @@ app = FastAPI(
 )
 
 
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+@app.middleware("http")
+async def csrf_guard(request: Request, call_next):
+    """The session is a cookie, so another website could try to make a student's browser send
+    a form to our API. Every state-changing request authenticated by the cookie must carry a
+    custom header, which other sites can't add to a form post (and SameSite=Lax blocks their
+    background requests). Requests using an explicit Bearer token don't need it."""
+    if (
+        request.method not in SAFE_METHODS
+        and settings.SESSION_COOKIE_NAME in request.cookies
+        and "authorization" not in request.headers
+        and request.headers.get(settings.CSRF_HEADER) != settings.CSRF_HEADER_VALUE
+    ):
+        return JSONResponse(status_code=403, content={"detail": "Request blocked (missing security header). Refresh the page and try again."})
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -38,6 +58,7 @@ async def security_headers(request: Request, call_next):
     return response
 
 app.include_router(auth_router)
+app.include_router(contact_router)
 app.include_router(admin_router)
 app.include_router(listings_router)
 app.include_router(notifications_router)

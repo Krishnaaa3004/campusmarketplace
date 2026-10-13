@@ -15,10 +15,6 @@ class SignupRequest(BaseModel):
     account_type: AccountType = "buyer"
 
 
-class LoginCodeRequest(BaseModel):
-    email: EmailStr
-
-
 class AccountTypeRequest(BaseModel):
     account_type: AccountType
 
@@ -66,12 +62,6 @@ class SignupVerifyRequest(NewPasswordMixin):
 class PasswordLoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(max_length=PASSWORD_MAX)
-
-
-class OtpLoginRequest(BaseModel):
-    """One-time code login, only for accounts that don't have a password yet."""
-    email: EmailStr
-    otp: str
 
 
 class SetPasswordRequest(NewPasswordMixin):
@@ -195,5 +185,5 @@ class UserOut(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    token: str
+    # The session itself is set as an HttpOnly cookie, never returned to page scripts.
     user: UserOut

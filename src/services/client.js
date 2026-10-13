@@ -12,12 +12,12 @@ export class ApiError extends Error {
   }
 }
 
-function authHeader() {
-  const token = localStorage.getItem('cm_token')
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
+// The session is an HttpOnly cookie the browser sends by itself (page scripts can't read it).
+// Every request also carries this header; the API refuses cookie-authenticated changes without
+// it, which stops other websites from forging requests (CSRF).
+const CSRF_HEADERS = { 'X-Requested-With': 'CampusMarket' }
 
-async function request(path, { method = 'GET', body, params, isForm, asBlob } = {}) {
+async function request(path, { method = 'GET', body, params, isForm, asBlob, headers = {} } = {}) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
@@ -29,9 +29,11 @@ async function request(path, { method = 'GET', body, params, isForm, asBlob } = 
 
   const res = await fetch(url, {
     method,
+    credentials: 'include',
     headers: {
       ...(isForm ? {} : { 'Content-Type': 'application/json' }),
-      ...authHeader(),
+      ...CSRF_HEADERS,
+      ...headers,
     },
     body: isForm ? body : body ? JSON.stringify(body) : undefined,
   })
@@ -56,7 +58,7 @@ async function request(path, { method = 'GET', body, params, isForm, asBlob } = 
 
 export const http = {
   get: (path, params) => request(path, { params }),
-  post: (path, body) => request(path, { method: 'POST', body }),
+  post: (path, body, opts = {}) => request(path, { method: 'POST', body, ...opts }),
   postForm: (path, formData) => request(path, { method: 'POST', body: formData, isForm: true }),
   put: (path, body) => request(path, { method: 'PUT', body }),
   putForm: (path, formData) => request(path, { method: 'PUT', body: formData, isForm: true }),

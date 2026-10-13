@@ -44,7 +44,7 @@ export const legacyUser = {
 }
 
 const seller = (id, name, campus_id) => ({
-  id, name, campus_id, campus: campuses.find((c) => c.id === campus_id).name, verified: true,
+  id, name, campus_id, campus: campuses.find((c) => c.id === campus_id).name, verified: true, has_phone: true,
 })
 
 export const listings = [
@@ -85,7 +85,7 @@ export const listings = [
 // Study material. Preview pages are generated placeholders in mockApi.js; the live
 // API renders real ones server-side (page 1 sharp, pages 2-4 blurred).
 const owner = (id, name, campus_id, phone = null) => ({
-  ...seller(id, name, campus_id), avatar_url: null, phone, email: `${name.split(' ')[0].toLowerCase()}@polaris.edu`,
+  ...seller(id, name, campus_id), has_phone: Boolean(phone), avatar_url: null, phone, email: `${name.split(' ')[0].toLowerCase()}@polaris.edu`,
 })
 
 export const resources = [

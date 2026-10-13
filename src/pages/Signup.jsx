@@ -125,7 +125,10 @@ export default function Signup() {
       ) : (
         <>
           <h2 className="mb-2 text-[26px] font-bold">Check your inbox</h2>
-          <p className="mb-6 text-sm text-ink-soft">Enter the 6-digit code we sent to {email}. Your account is created once it's verified.</p>
+          <p className="mb-6 text-sm text-ink-soft">
+            Enter the 6-digit code we sent to {email}. Your account is created once it's verified.
+            (If this email already has an account, we've emailed you instead. Just <Link to="/login" className="font-semibold text-brand">log in</Link>.)
+          </p>
 
           <form onSubmit={verifyCode}>
             <label className="field-label" htmlFor="otp">Verification code</label>

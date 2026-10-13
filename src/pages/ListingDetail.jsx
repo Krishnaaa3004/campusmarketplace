@@ -9,11 +9,11 @@ import EmptyState from '../components/EmptyState.jsx'
 import ImageLightbox from '../components/ImageLightbox.jsx'
 import RecommendedForYou from '../components/RecommendedForYou.jsx'
 import { recordListingView } from '../lib/recommendations.js'
-import { formatPrice, contactLink, titleCase, foodTempLabel, formatDay, isExpired } from '../lib/format.js'
+import { formatPrice, titleCase, foodTempLabel, formatDay, isExpired } from '../lib/format.js'
+import { openContact } from '../lib/contact.js'
 import Avatar from '../components/Avatar.jsx'
 import LinkifiedText from '../components/LinkifiedText.jsx'
 import { useAuth } from '../hooks/useAuth.jsx'
-import { recordContact } from '../hooks/useNotifications.js'
 import { useWishlist } from '../hooks/useWishlist.jsx'
 import { useToast } from '../hooks/useToast.jsx'
 
@@ -23,6 +23,7 @@ export default function ListingDetail() {
   const { isSaved, toggle } = useWishlist()
   const toast = useToast()
   const [reporting, setReporting] = useState(false)
+  const [contacting, setContacting] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
   const [viewerOpen, setViewerOpen] = useState(false)
   const { data: l, loading, error } = useApi(() => listingsApi.get(id), [id])
@@ -42,7 +43,23 @@ export default function ListingDetail() {
     )
   }
 
-  const links = contactLink(l)
+  // The seller's number/email isn't in the page; it's fetched only when Contact is tapped.
+  async function contact(channel) {
+    setContacting(true)
+    try {
+      await openContact({
+        targetType: 'listing',
+        targetId: l.id,
+        channel,
+        subject: `CampusMarket — ${l.title}`,
+        message: `Hi! I'm interested in your ${l.title} listed on CampusMarket. Is it still available?`,
+      })
+    } catch (err) {
+      toast(err.message)
+    } finally {
+      setContacting(false)
+    }
+  }
   const images = l.images && l.images.length > 0 ? l.images : []
 
   return (
@@ -148,17 +165,14 @@ export default function ListingDetail() {
           </p>
 
           <div className="flex flex-wrap gap-2.5">
-            {links.whatsapp ? (
+            {l.seller?.has_phone ? (
               <>
-                <a className="btn-accent" href={links.whatsapp} target="_blank" rel="noopener noreferrer"
-                  onClick={() => recordContact(user, 'listing', l.id, 'whatsapp')}>Contact Seller</a>
-                <a className="btn-ghost" href={links.email} target="_blank" rel="noopener noreferrer"
-                  onClick={() => recordContact(user, 'listing', l.id, 'email')}>Email instead</a>
+                <button className="btn-accent" disabled={contacting} onClick={() => contact('whatsapp')}>Contact Seller</button>
+                <button className="btn-ghost" disabled={contacting} onClick={() => contact('email')}>Email instead</button>
               </>
             ) : (
               // Older accounts may not have a number yet; email still reaches them.
-              <a className="btn-accent" href={links.email} target="_blank" rel="noopener noreferrer"
-                onClick={() => recordContact(user, 'listing', l.id, 'email')}>Email Seller</a>
+              <button className="btn-accent" disabled={contacting} onClick={() => contact('email')}>Email Seller</button>
             )}
             {String(l.seller?.id) !== String(user?.id) && (
               <button className="btn-ghost" onClick={() => setReporting(true)}>Report Listing</button>

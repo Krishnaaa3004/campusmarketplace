@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { authApi } from '../services/api.js'
+import { IS_MOCK, authApi } from '../services/api.js'
 import { syncHistory } from '../lib/recommendations.js'
 
 const AuthContext = createContext(null)
@@ -9,17 +9,22 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    authApi
-      .me()
+    // Older versions kept the session in browser storage, where injected scripts could read it.
+    // Swap it for the HttpOnly cookie once, then delete it, so nobody is logged out by the change.
+    const stored = !IS_MOCK && localStorage.getItem('cm_token')
+    const loadUser = stored
+      ? authApi
+          .migrateStoredSession(stored)
+          .then((res) => res.user)
+          .catch(() => null)
+          .finally(() => localStorage.removeItem('cm_token'))
+      : authApi.me()
+
+    loadUser
       .then((u) => {
         setUser(u)
-        // Stay logged in: each visit renews the session for another 30 days.
-        if (u) {
-          authApi
-            .refreshSession()
-            .then((res) => res?.token && localStorage.setItem('cm_token', res.token))
-            .catch(() => {})
-        }
+        // Stay logged in: each visit renews the session cookie for another 30 days.
+        if (u && !stored) authApi.refreshSession().catch(() => {})
       })
       .catch(() => setUser(null))
       .finally(() => setLoading(false))
@@ -31,8 +36,8 @@ export function AuthProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
+  // The session cookie was set by the server (HttpOnly); we only keep the user.
   function startSession(res) {
-    if (res?.token) localStorage.setItem('cm_token', res.token)
     setUser(res.user)
     return res.user
   }
@@ -51,9 +56,6 @@ export function AuthProvider({ children }) {
     needsPassword: Boolean(user && user.has_password === false),
     async login(email, password) {
       return startSession(await authApi.login(email, password))
-    },
-    async loginWithCode(email, otp) {
-      return startSession(await authApi.loginWithCode(email, otp))
     },
     async signupVerify(payload) {
       return startSession(await authApi.signupVerify(payload))
@@ -96,7 +98,7 @@ export function AuthProvider({ children }) {
       return updated
     },
     async logout() {
-      await authApi.logout()
+      await authApi.logout().catch(() => {}) // clears the cookie; log out locally either way
       setUser(null)
     },
   }

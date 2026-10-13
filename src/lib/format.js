@@ -3,24 +3,6 @@ export function formatPrice(price) {
   return `₹${Number(price).toLocaleString('en-IN')}`
 }
 
-// "Contact Seller" links. WhatsApp goes to the seller's own number (collected at onboarding);
-// it's null for older accounts without one, so the page falls back to email only.
-export function contactLink(listing) {
-  const phone = listing.seller?.phone
-  const text = `Hi! I'm interested in your ${listing.title} listed on CampusMarket. Is it still available?`
-  return {
-    whatsapp: phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : null,
-    // Opens Gmail's compose window in a new tab, addressed to the seller.
-    email: `https://mail.google.com/mail/?${new URLSearchParams({
-      view: 'cm',
-      fs: '1',
-      to: listing.seller?.email || '',
-      su: `CampusMarket — ${listing.title}`,
-      body: `${text}\n\nThanks!`,
-    })}`,
-  }
-}
-
 export function titleCase(s = '') {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }

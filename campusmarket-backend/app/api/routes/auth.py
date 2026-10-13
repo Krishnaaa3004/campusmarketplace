@@ -2,12 +2,14 @@ import time
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.email import send_otp_email
+from app.core.email import EmailError, send_account_exists_email, send_otp_email
 from app.core.images import ImageError, check_image, read_upload
 from app.core.ratelimit import SlidingWindowLimiter
 from app.core.security import (
@@ -16,7 +18,9 @@ from app.core.security import (
     get_current_user,
     get_current_user_any,
     hash_otp,
+    clear_session_cookie,
     hash_password,
+    set_session_cookie,
     verify_otp,
     verify_password,
 )
@@ -29,9 +33,7 @@ from app.schemas.auth import (
     AccountTypeRequest,
     ForgotPasswordRequest,
     InterestsRequest,
-    LoginCodeRequest,
     LoginResponse,
-    OtpLoginRequest,
     PasswordLoginRequest,
     ProfileRequest,
     ProfileUpdateRequest,
@@ -86,8 +88,10 @@ def _consume_otp(db: Session, email: str, otp: str, purpose: str) -> None:
     db.delete(record)
 
 
-def _login_response(user: User) -> dict:
-    return {"token": create_access_token(user.id), "user": user}
+def _login_response(user: User, response: Response) -> dict:
+    """Start (or renew) a session: HttpOnly cookie, user in the body, no token for scripts."""
+    set_session_cookie(response, create_access_token(user.id))
+    return {"user": user}
 
 
 def _find_user(db: Session, email: str) -> User | None:
@@ -101,6 +105,17 @@ _login_ip_limiter = SlidingWindowLimiter(settings.LOGIN_IP_LIMIT, settings.LOGIN
 _code_email_limiter = SlidingWindowLimiter(1, settings.CODE_EMAIL_COOLDOWN_SECONDS)
 _code_ip_limiter = SlidingWindowLimiter(settings.CODE_IP_LIMIT, settings.CODE_IP_WINDOW_MINUTES * 60)
 CODE_TOO_SOON = "Please wait a minute before asking for another code."
+# Unknown emails "lock" after the same number of failures as real accounts, so a lockout
+# message doesn't reveal that an account exists.
+_unknown_email_failures = SlidingWindowLimiter(settings.LOGIN_MAX_FAILURES - 1, settings.LOGIN_LOCK_MINUTES * 60)
+
+
+def _send_quietly(send, *args) -> None:
+    """Background email: failures are logged (the user just asks for another code)."""
+    try:
+        send(*args)
+    except EmailError as e:
+        logging.getLogger("campusmarket.email").error("Background email failed: %s", e)
 
 
 def _client_ip(request: Request) -> str:
@@ -115,27 +130,31 @@ def _may_send_code(request: Request, email: str) -> bool:
 
 
 @router.post("/auth/signup")
-def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_db)):
-    """Step 1: send a code. Nothing is created until the code is verified (step 2)."""
+def signup(payload: SignupRequest, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
+    """Step 1: email a code. Same answer whether or not the email already has an account
+    (an existing account gets a "you already have an account" email instead of a code), and
+    the email goes out after the response, so timing gives nothing away either."""
     _check_domain(payload.email)
-    existing = _find_user(db, payload.email)
-    if existing and existing.verified:
-        raise HTTPException(status_code=409, detail="An account with this email already exists. Log in instead.")
     if not _may_send_code(request, payload.email):
         raise HTTPException(status_code=429, detail=CODE_TOO_SOON)
-    otp = _issue_otp(db, payload.email, "signup")
-    db.commit()
-    send_otp_email(payload.email, otp)
-    return {"message": "OTP sent"}
+    existing = _find_user(db, payload.email)
+    if existing and existing.verified:
+        background.add_task(_send_quietly, send_account_exists_email, payload.email)
+    else:
+        otp = _issue_otp(db, payload.email, "signup")
+        db.commit()
+        background.add_task(_send_quietly, send_otp_email, payload.email, otp)
+    return {"message": "Check your inbox for a 6-digit code."}
 
 
 @router.post("/auth/signup/verify", response_model=LoginResponse)
-def signup_verify(payload: SignupVerifyRequest, db: Session = Depends(get_db)):
+def signup_verify(payload: SignupVerifyRequest, response: Response, db: Session = Depends(get_db)):
     """Step 2: check the code, then create the verified account with its password."""
     _check_domain(payload.email)
     existing = _find_user(db, payload.email)
     if existing and existing.verified:
-        raise HTTPException(status_code=409, detail="An account with this email already exists. Log in instead.")
+        # No signup code is ever sent to an existing account, so answer like a bad code.
+        raise HTTPException(status_code=400, detail="Code expired, request a new one")
     _consume_otp(db, payload.email, payload.otp, "signup")
 
     # A row may exist from the old flow (signup started, never verified); finish it.
@@ -148,15 +167,17 @@ def signup_verify(payload: SignupVerifyRequest, db: Session = Depends(get_db)):
     user.password_changed_at = datetime.utcnow()  # logs out every older session
     db.commit()
     db.refresh(user)
-    return _login_response(user)
+    return _login_response(user, response)
 
 
 # ---------- login ----------
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-def login(payload: PasswordLoginRequest, request: Request, db: Session = Depends(get_db)):
-    """Email + password. One generic error for a wrong email OR password."""
+def login(payload: PasswordLoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Email + password. Unknown email, wrong password and "no password yet" all get the same
+    answer, and lock out the same way, so this can't be used to find out who has an account.
+    (Accounts from before passwords use Forgot password to set their first one.)"""
     if not _login_ip_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many login attempts. Wait a few minutes and try again.")
 
@@ -164,17 +185,12 @@ def login(payload: PasswordLoginRequest, request: Request, db: Session = Depends
     now = datetime.utcnow()
     if not user or not user.verified:
         verify_password(payload.password, None)  # same work as a real check, so timing gives nothing away
+        if not _unknown_email_failures.allow(payload.email.lower()):
+            raise HTTPException(status_code=429, detail=LOCKED_MESSAGE)
         raise HTTPException(status_code=401, detail=INVALID_LOGIN)
     if user.locked_until and user.locked_until > now:
         raise HTTPException(status_code=429, detail=LOCKED_MESSAGE)
-    if not user.password_hash:
-        # Accounts from before passwords existed: the frontend falls back to a one-time code,
-        # then makes them create a password.
-        raise HTTPException(status_code=403, detail={
-            "code": "password_not_set",
-            "message": "You haven't set a password yet. We'll email you a code to log in.",
-        })
-    if not verify_password(payload.password, user.password_hash):
+    if not verify_password(payload.password, user.password_hash):  # also False when no password is set
         user.failed_logins = (user.failed_logins or 0) + 1
         locked = user.failed_logins >= settings.LOGIN_MAX_FAILURES
         if locked:
@@ -187,40 +203,7 @@ def login(payload: PasswordLoginRequest, request: Request, db: Session = Depends
     user.locked_until = None
     db.commit()
     db.refresh(user)
-    return _login_response(user)
-
-
-@router.post("/auth/login-code")
-def login_code(payload: LoginCodeRequest, request: Request, db: Session = Depends(get_db)):
-    """Send a one-time login code. Only for existing accounts that have no password yet;
-    everyone else logs in with their password (or uses Forgot password)."""
-    _check_domain(payload.email)
-    user = _find_user(db, payload.email)
-    if not user or not user.verified:
-        raise HTTPException(status_code=404, detail="No account with this email yet. Sign up first.")
-    if user.password_hash:
-        raise HTTPException(status_code=400, detail="This account has a password. Log in with it, or use Forgot password.")
-    if not _may_send_code(request, payload.email):
-        raise HTTPException(status_code=429, detail=CODE_TOO_SOON)
-    otp = _issue_otp(db, payload.email, "login")
-    db.commit()
-    send_otp_email(payload.email, otp)
-    return {"message": "OTP sent"}
-
-
-@router.post("/auth/login/otp", response_model=LoginResponse)
-def login_with_code(payload: OtpLoginRequest, db: Session = Depends(get_db)):
-    """One-time code login for accounts without a password. Afterwards the app shows the
-    mandatory "Create a password" step (and every other endpoint refuses until it's done)."""
-    user = _find_user(db, payload.email)
-    if not user or not user.verified:
-        raise HTTPException(status_code=400, detail="Code expired, request a new one")
-    if user.password_hash:
-        raise HTTPException(status_code=400, detail="This account has a password. Log in with it, or use Forgot password.")
-    _consume_otp(db, payload.email, payload.otp, "login")
-    db.commit()
-    db.refresh(user)
-    return _login_response(user)
+    return _login_response(user, response)
 
 
 # ---------- passwords ----------
@@ -229,6 +212,7 @@ def login_with_code(payload: OtpLoginRequest, db: Session = Depends(get_db)):
 @router.post("/auth/set-password", response_model=LoginResponse)
 def set_password(
     payload: SetPasswordRequest,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user_any),
 ):
@@ -241,11 +225,11 @@ def set_password(
     db.commit()
     db.refresh(user)
     # The change logs out older sessions, including this one, so hand back a fresh one.
-    return _login_response(user)
+    return _login_response(user, response)
 
 
 @router.post("/auth/password/forgot")
-def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+def forgot_password(payload: ForgotPasswordRequest, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
     """Email a reset code. Same answer whether or not the account exists (and when rate-limited,
     so the limit can't be used to find out which emails have accounts)."""
     _check_domain(payload.email)
@@ -253,12 +237,13 @@ def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Sessio
     if user and user.verified and _may_send_code(request, payload.email):
         otp = _issue_otp(db, payload.email, "reset")
         db.commit()
-        send_otp_email(payload.email, otp)
+        # After the response, so answering for a real account takes no longer than for a fake one.
+        background.add_task(_send_quietly, send_otp_email, payload.email, otp)
     return {"message": "If an account exists for this email, we've sent it a code."}
 
 
 @router.post("/auth/password/reset", response_model=LoginResponse)
-def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+def reset_password(payload: ResetPasswordRequest, response: Response, db: Session = Depends(get_db)):
     """Check the reset code, set the new password, unlock the account and log in."""
     _consume_otp(db, payload.email, payload.otp, "reset")
     user = _find_user(db, payload.email)
@@ -270,7 +255,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     user.locked_until = None
     db.commit()
     db.refresh(user)
-    return _login_response(user)
+    return _login_response(user, response)
 
 
 @router.post("/auth/profile", response_model=UserOut)
@@ -386,10 +371,16 @@ def record_views(
 
 
 @router.post("/auth/refresh", response_model=LoginResponse)
-def refresh_session(user: User = Depends(get_current_user_any)):
+def refresh_session(response: Response, user: User = Depends(get_current_user_any)):
     """Swap a still-valid session for a fresh 30-day one. The app calls this on start-up, so
-    regular users never get logged out. Old sessions killed by a password change can't renew."""
-    return _login_response(user)
+    regular users never get logged out. Old sessions killed by a password change can't renew.
+    Also moves sessions that older versions of the app kept in the browser into the cookie."""
+    return _login_response(user, response)
+
+
+@router.post("/auth/logout", status_code=204)
+def logout(response: Response):
+    clear_session_cookie(response)
 
 
 @router.get("/users/me", response_model=UserOut)
